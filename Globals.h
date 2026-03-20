@@ -64,7 +64,7 @@ namespace pnt {
     // Camera
     namespace cam {
         constexpr POINT VENT_WARNING_POS = { 1563, 892 }; // Location for testing vent warning in the cameras
-        constexpr POINT resetVent = { 1700, 915 }; // Where the reset vent button is for clicking
+        constexpr POINT RESET_VENT_BTN_POS = { 1700, 915 }; // Where the reset vent button is for clicking
 
         constexpr POINT CAM_01_POS = { 1133, 903 }; // WestHall
         constexpr POINT CAM_02_POS = { 1382, 903 }; // EastHall
@@ -100,9 +100,9 @@ namespace pnt {
 // Colors
 namespace clr {
     constexpr Color SYS_BTN_COLOR = { 40, 152, 120 };
-    constexpr CNorm SYS_BTN_COLOR_NRM = SYS_BTN_COLOR.Normal();
+    constexpr CNorm SYS_BTN_COLOR_NRM = SYS_BTN_COLOR.Normalized();
     constexpr Color CAM_BTN_COLOR = { 136, 172, 0 };
-    constexpr CNorm CAM_BTN_COLOR_NRM = CAM_BTN_COLOR.Normal();
+    constexpr CNorm CAM_BTN_COLOR_NRM = CAM_BTN_COLOR.Normalized();
 }
 
 constexpr int CAM_RESP_MS = 300; // Time it takes for the camera to be ready for input
@@ -111,27 +111,27 @@ constexpr int CAM_RESP_MS = 300; // Time it takes for the camera to be ready for
 // If you're trying to get the position of just the one thing and don't need to do any sort of "switch" thing, please don't use this. It adds additional steps.
 enum class Button {
     Mask = 0,
-    ResetVent = 1,
+    ResetVent,
 
-    Cam01 = 2, // WestHall
-    Cam02 = 3, // EastHall
-    Cam03 = 4, // Closet
-    Cam04 = 5, // Kitchen
-    Cam05 = 6, // PirateCove
-    Cam06 = 7, // ShowtimeStage
-    Cam07 = 8, // PrizeCounter
-    Cam08 = 9, // PartsAndServices
+    Cam01, // WestHall
+    Cam02, // EastHall
+    Cam03, // Closet
+    Cam04, // Kitchen
+    Cam05, // PirateCove
+    Cam06, // ShowtimeStage
+    Cam07, // PrizeCounter
+    Cam08, // PartsAndServices
 
-    CameraSystem = 10,
-    VentSystem = 11,
-    DuctSystem = 12,
+    CameraSystem,
+    VentSystem,
+    DuctSystem,
 
-    Snare_Left = 13,
-    Snare_Top = 14,
-    Snare_Right = 15,
+    SnareLeft,
+    SnareTop,
+    SnareRight,
 
-    Duct_Left = 16,
-    Duct_Right = 17,
+    DuctLeft,
+    DuctRight,
 };
 
 // Returns the button enum of a camera int
@@ -149,3 +149,8 @@ extern const POINT BTN_POSITIONS[18];
 
 // Pick the button position from the list of button positions
 POINT GetButtonPos(Button);
+
+constexpr int SECS_PER_MIN = 60; // Real time
+constexpr int SECS_PER_HOUR = 45; // Game time
+constexpr int DECISECS_PER_SEC = 10;
+constexpr int DECISECS_PER_HOUR = SECS_PER_HOUR * DECISECS_PER_SEC;

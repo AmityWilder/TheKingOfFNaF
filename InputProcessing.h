@@ -13,19 +13,23 @@ void ReadGameClock();
 
 void CheckVentsReset();
 
-void GenerateSamplePoints(POINT* arr, POINT start, long size);
+void GenerateSamplePoints(POINT arr[5], POINT start, long size);
 
 int TestSamples_CNormMethod(POINT center, CNorm compare, double threshold);
 int TestSamples_CNormMethod(Button button, CNorm compare, double threshold);
 
 int TestSamples_ColorMethod(POINT center, Color compare, double threshold);
 
-int TestSamples_GrayMethod(POINT center, unsigned char compare, unsigned char maxDifference);
+int TestSamples_GrayMethod(POINT center, uint8_t compare, uint8_t maxDifference);
 
-int MaxInArray(int* arr, size_t size); // Returns the index of the highest value
+// Returns the position of the maximum value
+template<class I>
+size_t MaxInArray(I begin, I end) {
+    return std::distance(begin, std::max_element(begin, end))
+}
 
 void LocateOfficeLamp(); // For finding the yaw of the office
 
-bool CheckOnNMBB();
+bool IsNMBBStanding();
 
 void UpdateState();

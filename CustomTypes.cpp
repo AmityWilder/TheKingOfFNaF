@@ -1,66 +1,67 @@
 #include "CustomTypes.h"
+#include "Globals.h"
 #include <cmath>
 #include <iomanip>
 
-unsigned short const& ClockTime::GetDeciseconds() const {
+const uint16_t& ClockTime::GetDeciseconds() const {
     return deciseconds;
 }
 
-unsigned short ClockTime::GetSeconds() const {
-    return (deciseconds / 10);
+uint16_t ClockTime::GetSeconds() const {
+    return (deciseconds / DECISECS_PER_SEC);
 }
 
-unsigned char ClockTime::GetMinutes() const {
-    return (unsigned char)(GetSeconds() / 60); // 60 seconds (realtime)
+uint8_t ClockTime::GetMinutes() const {
+    return (uint8_t)(GetSeconds() / SECS_PER_MIN); // 60 seconds (realtime)
 }
 
-unsigned char ClockTime::GetHour() const {
-    return (unsigned char)(GetSeconds() / 45); // 45 seconds (gametime)
+uint8_t ClockTime::GetHour() const {
+    return (uint8_t)(GetSeconds() / SECS_PER_HOUR); // 45 seconds (gametime)
 }
 
-unsigned short ClockTime::GetWholeHourDeciseconds() const {
-    return ((unsigned short)GetHour() * 450);
+uint16_t ClockTime::GetWholeHourDeciseconds() const {
+    return ((uint16_t)GetHour() * DECISECONDS_PER_HOUR);
 }
 
-unsigned short ClockTime::GetDecisecondsSinceHour() const {
+uint16_t ClockTime::GetDecisecondsSinceHour() const {
     return (GetDeciseconds() - GetWholeHourDeciseconds());
 }
 
-void ClockTime::UpdateTime(unsigned short const& newTime) {
+void ClockTime::UpdateTime(const uint16_t& newTime) {
     if (newTime > deciseconds && newTime < 6000 && newTime > 0 && ((newTime - deciseconds) < 10 || pingsSinceChange > 10)) {
         deciseconds = newTime;
         pingsSinceChange = 0;
     } else ++pingsSinceChange;
 }
 
-int const& ClockTime::GetPingsSinceChange() {
+const int& ClockTime::GetPingsSinceChange() {
     return pingsSinceChange;
 }
 
-unsigned char Color::Gray() const {
-    return (unsigned char)(((int)r + (int)g + (int)b) / 3);
+uint8_t Color::Gray() const {
+    return (uint8_t)(((int)r + (int)g + (int)b) / 3);
 }
 
-unsigned char Color::RedDev() const {
+uint8_t Color::RedDev() const {
     int distFromMean = (r - Gray());
-    return (unsigned char)sqrt((distFromMean * distFromMean) / 3);
+    return (uint8_t)sqrt((distFromMean * distFromMean) / 3);
 }
 
-unsigned char Color::GreenDev() const {
+uint8_t Color::GreenDev() const {
     int distFromMean = (g - Gray());
-    return (unsigned char)sqrt((distFromMean * distFromMean) / 3);
+    return (uint8_t)sqrt((distFromMean * distFromMean) / 3);
 }
 
-unsigned char Color::BlueDev() const {
+uint8_t Color::BlueDev() const {
     int distFromMean = (b - Gray());
-    return (unsigned char)sqrt((distFromMean * distFromMean) / 3);
+    return (uint8_t)sqrt((distFromMean * distFromMean) / 3);
 }
 
-void GameState::DisplayData() {
+void GameState::DisplayData() const {
     std::cout << "\x1b[0;0HTime: "
         << (int)(gameData.time.GetMinutes())
-        << ':' << (int)(gameData.time.GetSeconds() % 60)
-        << '.' << (int)(gameData.time.GetDeciseconds() % 10)
+        << ':' << (int)(gameData.time.GetSeconds() % SECS_PER_MIN)
+        << '.' << (int)(gameData.time.GetDeciseconds() % DECISECS_PER_SEC)
         << "\n\nStatuses\n========\nVentilation " << std::setw(7) << (gameData.ventilationNeedsReset ? "WARNING" : "good")
         << "\nLeft  door  " << std::setw(6) << (gameData.doorsClosed[0] ? "closed" : "open")
         << "\nFront vent  " << std::setw(6) << (gameData.doorsClosed[1] ? "closed" : "open")
@@ -84,32 +85,14 @@ void GameState::DisplayData() {
     std::cout << "\n\n";
 }
 
-void GameState::Init() {
-    state = State::Office;
-    stateData.cd.camera = Camera::WestHall;
-    gameData.doorsClosed[0] = false;
-    gameData.doorsClosed[1] = false;
-    gameData.doorsClosed[2] = false;
-    gameData.doorsClosed[3] = false;
-    gameData.time = ClockTime();
-    gameData.ventilationNeedsReset = false;
-    gameData.flashlight = false;
-}
-
 ColorHSL Color::ToHSL() const {
-    CNorm col = Normal();
+    CNorm col = Normalized();
 
     double cmax;
-    int cmaxComp;
     double cmin;
-
-    if (col.r > col.g) {
-        if (col.r > col.b) cmaxComp = 0;
-        else cmaxComp = 2; // col.r < col.b
-    } else { // col.r < col.g
-        if (col.g > col.b) cmaxComp = 1;
-        else cmaxComp = 2; // col.g < col.b
-    }
+    int cmaxComp = (col.r > col.g)
+        ? ((col.r > col.b) ? 0 : 2)
+        : ((col.g > col.b) ? 1 : 2);
 
     switch (cmaxComp) {
         case 0: cmax = col.r; break;
@@ -125,20 +108,14 @@ ColorHSL Color::ToHSL() const {
     if (delta == 0.0) h = 0.0;
     else {
         switch (cmaxComp) {
-            case 0: // Red
-                h = 60.0 * ((col.g - col.b) / delta);
-                break;
-            case 1: // Green
-                h = 60.0 * (((col.b - col.r) / delta) + 2.0);
-                break;
-            case 2: // Blue
-                h = 60.0 * (((col.r - col.g) / delta) + 4.0);
-                break;
+            case 0: h = 60.0 *  ((col.g - col.b) / delta);        break; // Red
+            case 1: h = 60.0 * (((col.b - col.r) / delta) + 2.0); break; // Green
+            case 2: h = 60.0 * (((col.r - col.g) / delta) + 4.0); break; // Blue
         }
     }
 
     // Lum
-    l = (cmax + cmin) / 2.0;
+    l = 0.5 * (cmax + cmin);
 
     // Sat
     if (delta == 0.0) s = 0;

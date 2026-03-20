@@ -7,6 +7,16 @@
 // Here we declare/define the non-primitive types //
 ////////////////////////////////////////////////////
 
+struct Vector3 {
+    double x, y, z;
+
+    Vector3 Normalized() const {
+
+    }
+
+    double Dot
+}
+
 // Normalized RGB color
 struct CNorm {
     double r, g, b;
@@ -32,7 +42,7 @@ struct Color {
     unsigned char GreenDev() const;
     unsigned char BlueDev() const;
 
-    constexpr CNorm Normal() const {
+    constexpr CNorm Normalized() const {
         return {
             (double)r / 255.0,
             (double)g / 255.0,
@@ -47,7 +57,7 @@ struct Color {
     ColorHSL ToHSL() const;
 
     constexpr double CDot(Color rhs) const {
-        return Normal().CDot(rhs.Normal());
+        return Normalized().CDot(rhs.Normalized());
     }
 };
 
@@ -55,7 +65,7 @@ class ClockTime
 {
 private:
     // One hour is 45 seconds. A night is 4 minutes 30 seconds, or 270 seconds -- 2700 deciseconds. This can be expressed in 12 bits as 0b101010001100.
-    unsigned short deciseconds;
+    uint16_t deciseconds;
     int pingsSinceChange;
 
 public:
@@ -64,20 +74,20 @@ public:
         pingsSinceChange{ 0 }
     {};
 
-    ClockTime(unsigned short const& deciseconds) :
+    ClockTime(uint16_t const& deciseconds) :
         deciseconds{ deciseconds },
         pingsSinceChange{ 0 }
     {};
 
-    unsigned short const& GetDeciseconds() const; // Read-only
-    unsigned short GetSeconds() const; // It takes 1 bit more than a char to describe the number of seconds in a night.
+    const uint16_t& GetDeciseconds() const; // Read-only
+    uint16_t GetSeconds() const; // It takes 1 bit more than a char to describe the number of seconds in a night.
     unsigned char GetMinutes() const; // Not sure what we'd need this for, but just in case.
     unsigned char GetHour() const; // What hour of the night we are at
 
-    unsigned short GetWholeHourDeciseconds() const; // Converts hours to deciseconds, for finding how many deciseconds we are through the current hour.
-    unsigned short GetDecisecondsSinceHour() const; // Finds how many deciseconds into the current hour we are.
+    uint16_t GetWholeHourDeciseconds() const; // Converts hours to deciseconds, for finding how many deciseconds we are through the current hour.
+    uint16_t GetDecisecondsSinceHour() const; // Finds how many deciseconds into the current hour we are.
 
-    void UpdateTime(unsigned short const&);
+    void UpdateTime(const uint16_t&);
     int const& GetPingsSinceChange();
 };
 
@@ -162,37 +172,150 @@ namespace std {
     }
 }
 
-struct GameState {
+struct OfficeData {
+    double officeYaw; // How far left/right we are looking [-1,1]
+};
+
+struct CamData {
+    Camera camera; // Which camera we are looking at
+};
+
+struct VentData {
+    Vent ventSnare; // Which vent snare is active
+};
+
+struct DuctData {
+    Duct closedDuct; // Which duct is currently closed
+    POINT audioLure;
+};
+
+// This is the type which actually stores the data we have about the gamestate
+class GameData {
+    constexpr uint8_t VENTILATION_NEEDS_RESET_FLAG = 1;
+    constexpr uint8_t FLASHLIGHT_FLAG = VENTILATION_NEEDS_RESET_FLAG << 1;
+    // in order from left to right
+    constexpr uint8_t DOOR0_CLOSED_FLAG = FLASHLIGHT_FLAG << 1;
+    constexpr uint8_t DOOR1_CLOSED_FLAG = DOOR0_CLOSED_FLAG << 1;
+    constexpr uint8_t DOOR2_CLOSED_FLAG = DOOR1_CLOSED_FLAG << 1;
+    constexpr uint8_t DOOR3_CLOSED_FLAG = DOOR2_CLOSED_FLAG << 1;
+
+    uint8_t flags;
+
+public:
+    ClockTime time;
+
+    constexpr bool DoesVentilationNeedReset() const {
+        return flags & VENTILATION_NEEDS_RESET_FLAG;
+    }
+    constexpr void VentilationHasBeenReset() {
+        return flags &= ~VENTILATION_NEEDS_RESET_FLAG;
+    }
+    constexpr void VentilationNeedsReset() {
+        return flags |= VENTILATION_NEEDS_RESET_FLAG;
+    }
+    constexpr void ToggleVentilationReset() {
+        return flags ^= VENTILATION_NEEDS_RESET_FLAG;
+    }
+
+    constexpr bool IsFlashlightOn() const {
+        return flags & FLASHLIGHT_FLAG;
+    }
+    constexpr void TurnFlashlightOff() {
+        return flags &= ~FLASHLIGHT_FLAG;
+    }
+    constexpr void TurnFlashlightOn() {
+        return flags |= FLASHLIGHT_FLAG;
+    }
+    constexpr void ToggleFlashlight() {
+        return flags ^= FLASHLIGHT_FLAG;
+    }
+
+    constexpr bool IsDoorClosed(int door) const {
+        return flags & DOOR0_CLOSED_FLAG << door;
+    }
+    constexpr void OpenDoor(int door) {
+        flags &= ~(DOOR0_CLOSED_FLAG << door);
+    }
+    constexpr void CloseDoor(int door) {
+        flags |= DOOR0_CLOSED_FLAG << door;
+    }
+    constexpr void ToggleDoor(int door) {
+        flags ^= DOOR0_CLOSED_FLAG << door;
+    }
+}
+
+class GameState {
     State state; // What state we are in (office, checking cameras, ducts, vents)
-
     union StateData { // The metadata about the state (what part of the office, which camera)
-        struct OfficeData {
-            double officeYaw; // How far left/right we are looking [-1,1]
-        } od;
-
-        struct CamData {
-            Camera camera; // Which camera we are looking at
-        } cd;
-
-        struct VentData {
-            Vent ventSnare; // Which vent snare is active
-        } vd;
-
-        struct DuctData {
-            Duct closedDuct; // Which duct is currently closed
-            POINT audioLure;
-        } dd;
+        OfficeData od;
+        CamData cd;
+        VentData vd;
+        DuctData dd;
     } stateData; // Information about the current state that can tell us how to interpret information
 
-    // This is the type which actually stores the data we have about the gamestate
-    struct GameData {
-        ClockTime time;
-        bool ventilationNeedsReset;
+public:
+    State GetState() const {
+        return state;
+    }
 
-        bool doorsClosed[4]; // In order from left to right
-        bool flashlight;
-    } gameData;
+    void SwitchToOffice(OfficeData data) {
+        state = State::Office;
+        od = data;
+    }
+    void SwitchToCam(CamData data) {
+        state = State::Cam;
+        cd = data;
+    }
+    void SwitchToVent(VentData data) {
+        state = State::Vent;
+        vd = data;
+    }
+    void SwitchToDuct(DuctData data) {
+        state = State::Duct;
+        dd = data;
+    }
 
-    void DisplayData();
-    void Init();
+    const OfficeData* GetOfficeData() const {
+        return (state == State::Office) &od : nullptr;
+    }
+    const CamData* GetCamData() const {
+        return (state == State::Camera) &cd : nullptr;
+    }
+    const VentData* GetVentData() const {
+        return (state == State::Vent) &vd : nullptr;
+    }
+    const DuctData* GetDuctData() const {
+        return (state == State::Duct) &dd : nullptr;
+    }
+
+    OfficeData* GetOfficeData() {
+        return (state == State::Office) &od : nullptr;
+    }
+    CamData* GetCamData() {
+        return (state == State::Camera) &cd : nullptr;
+    }
+    VentData* GetVentData() {
+        return (state == State::Vent) &vd : nullptr;
+    }
+    DuctData* GetDuctData() {
+        return (state == State::Duct) &dd : nullptr;
+    }
+
+    GameData gameData;
+
+    constexpr GameState() :
+        state { State::Office },
+        stateData.cd {
+            Camera::WestHall // camera
+        },
+        gameData {
+            ClockTime(), // time
+            0 // flags
+            false, // ventilationNeedsReset
+            { false, false, false, false }, // doorsClosed
+            false, // flashlight
+        }
+    {}
+
+    void DisplayData() const;
 };

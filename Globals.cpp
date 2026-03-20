@@ -20,7 +20,7 @@ HBITMAP H_BITMAP = CreateCompatibleBitmap(DESKTOP_HDC, SCREEN_WIDTH, SCREEN_HEIG
 
 const POINT BTN_POSITIONS[] = {
     pnt::ofc::MASK_POS,
-    pnt::cam::resetVent,
+    pnt::cam::RESET_VENT_BTN_POS,
     pnt::cam::CAM_01_POS,
     pnt::cam::CAM_02_POS,
     pnt::cam::CAM_03_POS,
