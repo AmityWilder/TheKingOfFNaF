@@ -147,13 +147,13 @@ void GameState::DisplayData() const {
     std::cout << RESET_CURSOR
         << "Time: " << gameData.time << '\n'
         << '\n'
-        << std::setw(23) << std::right << "Ventilation: " << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good   ") << '\n'
-        << std::setw(23) << std::right << "Left door: "   << (gameData.IsDoorClosed(0) ? "closed" : "open  ") << '\n'
-        << std::setw(23) << std::right << "Front vent: "  << (gameData.IsDoorClosed(1) ? "closed" : "open  ") << '\n'
-        << std::setw(23) << std::right << "Right door: "  << (gameData.IsDoorClosed(2) ? "closed" : "open  ") << '\n'
-        << std::setw(23) << std::right << "Right vent: "  << (gameData.IsDoorClosed(3) ? "closed" : "open  ") << '\n'
-        << std::setw(23) << std::right << "Flashlight: "  << (gameData.IsFlashlightOn() ? "on " : "off") << '\n'
-        << std::setw(23) << std::right << "Funtime Foxy showtime: " << gameData.nextFFShow << '\n'
+        << "Ventilation: " << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good   ") << '\n'
+        << "  Left door: " << (gameData.IsDoorClosed(0) ? "closed" : "open  ") << '\n'
+        << " Front vent: " << (gameData.IsDoorClosed(1) ? "closed" : "open  ") << '\n'
+        << " Right door: " << (gameData.IsDoorClosed(2) ? "closed" : "open  ") << '\n'
+        << " Right vent: " << (gameData.IsDoorClosed(3) ? "closed" : "open  ") << '\n'
+        << " Flashlight: " << (gameData.IsFlashlightOn() ? "on " : "off") << '\n'
+        << "Next Funtime Foxy show: " << gameData.nextFFShow << '\n'
         << '\n';
 
     std::cout << '<';
@@ -165,14 +165,14 @@ void GameState::DisplayData() const {
 
     switch (state) {
         case State::Camera:
-            std::cout << std::setw(12) << std::right << "Looking at: " << "CAM 0" << ((int)cd.camera + 1)
-                << " | " << std::setw(18) << std::left << cd.camera << '\n';
+            std::cout
+                << "Looking at: " << "CAM 0" << ((int)cd.camera + 1) << " | " << std::setw(18) << std::left << cd.camera << '\n';
             break;
 
         case State::Office:
             std::cout
-                << std::setw(14) << std::right << "Yaw: " << od.officeYaw << '\n'
-                << std::setw(14) << std::right << "Nightmare BB: " << (IsNMBBStanding() ? "standing" : "sitting ") << '\n';
+                << "Yaw: " << od.officeYaw << '\n'
+                << "Nightmare Balloon Boy: " << (IsNMBBStanding() ? "standing" : "sitting ") << '\n';
             break;
 
         default:
