@@ -135,9 +135,6 @@ bool IsNMBBStanding() {
     constexpr double THRESHOLD = 0.98;
     Color col = GetPixelColor(SAMPLE_POS);
     double sim = PANTS_COLOR.Similarity(col);
-#ifdef _DEBUG
-    std::cout << "{ " << (int)col.r << ", " << (int)col.g << ", " << (int)col.b << " } is " << sim << '/' << THRESHOLD << " similar to expected";
-#endif
     return (sim > THRESHOLD);
 }
 
