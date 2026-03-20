@@ -113,12 +113,12 @@ void GameState::DisplayData() const {
             << ':' << (int)(gameData.time.GetSeconds() % SECS_PER_MIN)
             << '.' << (int)(gameData.time.GetDeciseconds() % DECISECS_PER_SEC) << '\n'
         << '\n'
-        << std::setw(13) << std::right << "Ventilation: " << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good") << '\n'
-        << std::setw(13) << std::right << "Left door: "   << (gameData.IsDoorClosed(0) ? "closed" : "open") << '\n'
-        << std::setw(13) << std::right << "Front vent: "  << (gameData.IsDoorClosed(1) ? "closed" : "open") << '\n'
-        << std::setw(13) << std::right << "Right door: "  << (gameData.IsDoorClosed(2) ? "closed" : "open") << '\n'
-        << std::setw(13) << std::right << "Right vent: "  << (gameData.IsDoorClosed(3) ? "closed" : "open") << '\n'
-        << std::setw(13) << std::right << "Flashlight: "  << (gameData.IsFlashlightOn() ? "on" : "off") << '\n'
+        << std::setw(13) << std::right << "Ventilation: " << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good   ") << '\n'
+        << std::setw(13) << std::right << "Left door: "   << (gameData.IsDoorClosed(0) ? "closed" : "open  ") << '\n'
+        << std::setw(13) << std::right << "Front vent: "  << (gameData.IsDoorClosed(1) ? "closed" : "open  ") << '\n'
+        << std::setw(13) << std::right << "Right door: "  << (gameData.IsDoorClosed(2) ? "closed" : "open  ") << '\n'
+        << std::setw(13) << std::right << "Right vent: "  << (gameData.IsDoorClosed(3) ? "closed" : "open  ") << '\n'
+        << std::setw(13) << std::right << "Flashlight: "  << (gameData.IsFlashlightOn() ? "on " : "off") << '\n'
         << '\n';
 
     std::cout << '<';
