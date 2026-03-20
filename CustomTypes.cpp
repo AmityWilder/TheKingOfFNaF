@@ -144,7 +144,6 @@ namespace std {
 
 void GameState::DisplayData() const {
     constexpr const char* RESET_CURSOR = "\x1b[0;0H";
-    constexpr const char* I_FORGET = "\x1b[1G";
     std::cout << RESET_CURSOR
         << "Time: " << gameData.time << '\n'
         << '\n'
