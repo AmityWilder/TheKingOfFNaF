@@ -1,5 +1,6 @@
 #include "CustomTypes.h"
 #include "Globals.h"
+#include "InputProcessing.h"
 #include <cmath>
 #include <iomanip>
 
@@ -136,7 +137,9 @@ void GameState::DisplayData() const {
             break;
 
         case State::Office:
-            std::cout << std::setw(5) << std::right << "Yaw: " << od.officeYaw;
+            std::cout
+                << std::setw(14) << std::right << "Yaw: " << od.officeYaw << '\n'
+                << std::setw(14) << std::right << "Nightmare BB: " << (IsNMBBStanding() ? "standing" : "sitting ");
             break;
 
         default:
