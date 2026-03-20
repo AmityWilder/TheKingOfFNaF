@@ -133,9 +133,7 @@ bool IsNMBBStanding() {
     constexpr Color PANTS_COLOR = { 0, 28, 120 };
     constexpr POINT SAMPLE_POS = { 1024, 774 };
     constexpr double THRESHOLD = 0.98;
-    Color col = GetPixelColor(SAMPLE_POS);
-    double sim = PANTS_COLOR.Similarity(col);
-    return (sim > THRESHOLD);
+    return (PANTS_COLOR.Similarity(GetPixelColor(SAMPLE_POS)) > THRESHOLD);
 }
 
 void UpdateState() {
