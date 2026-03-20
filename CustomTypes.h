@@ -8,19 +8,12 @@
 // Here we declare/define the non-primitive types //
 ////////////////////////////////////////////////////
 
-struct Vector3 {
-    double x, y, z;
-
-    Vector3 Normalized() const;
-
-    constexpr double Dot(Vector3 rhs) const {
-        return x * rhs.x + y * rhs.y + z * rhs.z;
-    }
-};
-
 // Normalized RGB color
 struct CNorm {
     double r, g, b;
+
+    // Normalize the color like a vector (necessary for performing dot product properly)
+    CNorm VNormalized() const;
 
     // Better for determining how close a color is to another, regardless of the scale. (brightness/darkness)
     constexpr double CDot(CNorm rhs) const {
@@ -43,6 +36,7 @@ struct Color {
     unsigned char GreenDev() const;
     unsigned char BlueDev() const;
 
+    // Convert the color components from 0..=255 to 0.0..=1.0
     constexpr CNorm Normalized() const {
         constexpr double INV_BYTE_MAX = 1.0 / 255.0;
         return {
@@ -52,15 +46,13 @@ struct Color {
         };
     }
 
+    double Similarity(Color other) const;
+
     constexpr operator COLORREF() const {
         return RGB(r,g,b);
     }
 
     ColorHSL ToHSL() const;
-
-    constexpr double CDot(Color rhs) const {
-        return Normalized().CDot(rhs.Normalized());
-    }
 };
 
 class ClockTime {

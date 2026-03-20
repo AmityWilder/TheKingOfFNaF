@@ -103,9 +103,9 @@ namespace pnt {
 // Colors
 namespace clr {
     constexpr Color SYS_BTN_COLOR = { 40, 152, 120 };
-    constexpr CNorm SYS_BTN_COLOR_NRM = SYS_BTN_COLOR.Normalized();
+    const CNorm SYS_BTN_COLOR_NRM = SYS_BTN_COLOR.Normalized().VNormalized();
     constexpr Color CAM_BTN_COLOR = { 136, 172, 0 };
-    constexpr CNorm CAM_BTN_COLOR_NRM = CAM_BTN_COLOR.Normalized();
+    const CNorm CAM_BTN_COLOR_NRM = CAM_BTN_COLOR.Normalized().VNormalized();
 }
 
 constexpr int CAM_RESP_MS = 300; // Time it takes for the camera to be ready for input

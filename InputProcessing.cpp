@@ -86,7 +86,7 @@ int TestSamples_CNormMethod(POINT center, CNorm compare, double threshold) {
     int matchCount = 0;
     for (int i = 0; i < 5; ++i) {
         CNorm sample = GetPixelColor(samplePoint[i]).Normalized();
-        if (sample.CDot(compare) > threshold) ++matchCount;
+        if (sample.VNormalized().CDot(compare) > threshold) ++matchCount;
     }
     return matchCount;
 }
@@ -101,7 +101,7 @@ int TestSamples_ColorMethod(POINT center, Color compare, double threshold) {
     The difference is that the colors in this method, while converted to [0..1], are not normalized.
     It does make a difference.*/
 
-    CNorm compareVec = compare.Normalized();
+    CNorm compareVec = compare.Normalized().VNormalized();
 
     POINT samplePoint[5];
     GenerateSamplePoints(samplePoint, center, 4);
@@ -109,7 +109,7 @@ int TestSamples_ColorMethod(POINT center, Color compare, double threshold) {
     int matchCount = 0;
     for (int i = 0; i < 5; ++i) {
         Color sample = GetPixelColor(samplePoint[i]);
-        CNorm sampleVec = sample.Normalized();
+        CNorm sampleVec = sample.Normalized().VNormalized();
 
         if (sampleVec.CDot(compareVec) > threshold) ++matchCount;
     }
@@ -150,7 +150,7 @@ bool IsNMBBStanding() {
     constexpr Color PANTS_COLOR = { 0, 28, 120 };
     constexpr POINT SAMPLE_POS = { 1024, 774 };
     constexpr double THRESHOLD = 0.98;
-    return (PANTS_COLOR.CDot(GetPixelColor(SAMPLE_POS)) > THRESHOLD);
+    return (PANTS_COLOR.Similarity(GetPixelColor(SAMPLE_POS)) > THRESHOLD);
 }
 
 void UpdateState() {

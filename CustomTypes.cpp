@@ -4,11 +4,6 @@
 #include <cmath>
 #include <iomanip>
 
-Vector3 Vector3::Normalized() const {
-    double invLength = 1.0 / sqrt(x*x + y*y + z*z);
-    return { x*invLength, y*invLength, z*invLength };
-}
-
 uint16_t ClockTime::GetDeciseconds() const {
     return deciseconds;
 }
@@ -44,23 +39,32 @@ int ClockTime::GetPingsSinceChange() const {
     return pingsSinceChange;
 }
 
+CNorm CNorm::VNormalized() const {
+    const double invLength = sqrt(r*r + g*g + b*b);
+    return { r*invLength, g*invLength, b*invLength };
+}
+
 uint8_t Color::Gray() const {
     return (uint8_t)(((unsigned short)r + (unsigned short)g + (unsigned short)b) / 3);
 }
 
 uint8_t Color::RedDev() const {
-    int distFromMean = (r - Gray());
+    const int distFromMean = (r - Gray());
     return (uint8_t)sqrt((distFromMean * distFromMean) / 3);
 }
 
 uint8_t Color::GreenDev() const {
-    int distFromMean = (g - Gray());
+    const int distFromMean = (g - Gray());
     return (uint8_t)sqrt((distFromMean * distFromMean) / 3);
 }
 
 uint8_t Color::BlueDev() const {
-    int distFromMean = (b - Gray());
+    const int distFromMean = (b - Gray());
     return (uint8_t)sqrt((distFromMean * distFromMean) / 3);
+}
+
+double Color::Similarity(Color other) const {
+    return Normalized().VNormalized().CDot(other.Normalized().VNormalized());
 }
 
 namespace std {
@@ -151,12 +155,12 @@ void GameState::DisplayData() const {
 }
 
 ColorHSL Color::ToHSL() const {
-    CNorm col = Normalized();
+    const CNorm col = Normalized();
 
     // sadly windows.h creates macro definitions for ALL-LOWERCASE min/max that shadow the std::min/max functions :(
-    double cmax = max(col.r, max(col.g, col.b));
-    double cmin = min(col.r, min(col.g, col.b));
-    int cmaxComp = (col.r > col.g)
+    const double cmax = max(col.r, max(col.g, col.b));
+    const double cmin = min(col.r, min(col.g, col.b));
+    const int cmaxComp = (col.r > col.g)
         ? ((col.r > col.b) ? 0 : 2)
         : ((col.g > col.b) ? 1 : 2);
 
