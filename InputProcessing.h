@@ -17,12 +17,12 @@ void CheckVentsReset();
 
 void GenerateSamplePoints(POINT arr[5], POINT start, long size);
 
-int TestSamples_CNormMethod(POINT center, CNorm compare, double threshold);
-int TestSamples_CNormMethod(Button button, CNorm compare, double threshold);
+int TestSamples(POINT center, CNorm compare, double threshold);
+int TestSamples(Button button, CNorm compare, double threshold);
 
-int TestSamples_ColorMethod(POINT center, Color compare, double threshold);
+int TestSamples(POINT center, Color compare, double threshold);
 
-int TestSamples_GrayMethod(POINT center, uint8_t compare, uint8_t maxDifference);
+int TestSamples(POINT center, uint8_t compare, uint8_t maxDifference);
 
 // Returns the position of the maximum value
 template<class I>

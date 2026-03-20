@@ -40,7 +40,7 @@ int ClockTime::GetPingsSinceChange() const {
 }
 
 CNorm CNorm::VNormalized() const {
-    const double invLength = sqrt(r*r + g*g + b*b);
+    const double invLength = 1.0 / sqrt(r*r + g*g + b*b);
     return { r*invLength, g*invLength, b*invLength };
 }
 

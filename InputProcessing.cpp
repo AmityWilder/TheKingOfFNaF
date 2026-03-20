@@ -79,7 +79,7 @@ void GenerateSamplePoints(POINT arr[5], POINT start, long scale) {
 /// <param name="compare">Normalized color against which to compare the color at the sample points</param>
 /// <param name="threshold">0..1 double value for the minimum similarity required to consider a sample point a "match"</param>
 /// <returns>Total number of sample points which exceeded the threshold</returns>
-int TestSamples_CNormMethod(POINT center, CNorm compare, double threshold) {
+int TestSamples(POINT center, CNorm compare, double threshold) {
     POINT samplePoint[5];
     GenerateSamplePoints(samplePoint, center, 4);
 
@@ -91,32 +91,15 @@ int TestSamples_CNormMethod(POINT center, CNorm compare, double threshold) {
     return matchCount;
 }
 
-int TestSamples_CNormMethod(Button button, CNorm compare, double threshold) {
-    return TestSamples_CNormMethod(GetButtonPos(button), compare, threshold);
+int TestSamples(Button button, CNorm compare, double threshold) {
+    return TestSamples(GetButtonPos(button), compare, threshold);
 }
 
-int TestSamples_ColorMethod(POINT center, Color compare, double threshold) {
-    /* Ok I need to explain this because it's a little weird.
-    I know it looks like it's just extra steps being added on to the CNorm method, but it's not.
-    The difference is that the colors in this method, while converted to [0..1], are not normalized.
-    It does make a difference.*/
-
-    CNorm compareVec = compare.Normalized().VNormalized();
-
-    POINT samplePoint[5];
-    GenerateSamplePoints(samplePoint, center, 4);
-
-    int matchCount = 0;
-    for (int i = 0; i < 5; ++i) {
-        Color sample = GetPixelColor(samplePoint[i]);
-        CNorm sampleVec = sample.Normalized().VNormalized();
-
-        if (sampleVec.CDot(compareVec) > threshold) ++matchCount;
-    }
-    return matchCount;
+int TestSamples(POINT center, Color compare, double threshold) {
+    return TestSamples(center, compare.Normalized().VNormalized(), threshold);
 }
 
-int TestSamples_GrayMethod(POINT center, uint8_t compare, uint8_t maxDifference) {
+int TestSamples(POINT center, uint8_t compare, uint8_t maxDifference) {
     POINT samplePoint[5];
     GenerateSamplePoints(samplePoint, center, 4);
 
@@ -136,7 +119,7 @@ void LocateOfficeLamp() {
     for (int x = start; x < start + width; ++x) {
         if (GetPixelColor(x, y).Gray() > threshold) {
             // 100% of the samples must be 80% matching. Flickering be damned.
-            if (TestSamples_GrayMethod({ x,y }, 255, 20) == 5) {
+            if (TestSamples({ x,y }, 255, 20) == 5) {
                 OfficeData* od = GAME_STATE.GetOfficeData();
                 assert(!!od);
                 od->officeYaw = ((double)x - (double)start) / (double)width;
@@ -150,7 +133,12 @@ bool IsNMBBStanding() {
     constexpr Color PANTS_COLOR = { 0, 28, 120 };
     constexpr POINT SAMPLE_POS = { 1024, 774 };
     constexpr double THRESHOLD = 0.98;
-    return (PANTS_COLOR.Similarity(GetPixelColor(SAMPLE_POS)) > THRESHOLD);
+    Color col = GetPixelColor(SAMPLE_POS);
+    double sim = PANTS_COLOR.Similarity(col);
+#ifdef _DEBUG
+    std::cout << "{ " << (int)col.r << ", " << (int)col.g << ", " << (int)col.b << " } is " << sim << '/' << THRESHOLD << " similar to expected";
+#endif
+    return (sim > THRESHOLD);
 }
 
 void UpdateState() {
@@ -159,7 +147,7 @@ void UpdateState() {
     // List of how many samples returned as matches for each of the buttons being tested
     std::array<int, 3> statesToTest = { 0,0,0 };
     for (unsigned sysBtn = 0; sysBtn < statesToTest.size(); ++sysBtn) {
-        statesToTest[sysBtn] = TestSamples_CNormMethod(SystemButton(sysBtn), clr::SYS_BTN_COLOR_NRM, threshold);
+        statesToTest[sysBtn] = TestSamples(SystemButton(sysBtn), clr::SYS_BTN_COLOR_NRM, threshold);
     }
     size_t indexOfMax = MaxInArray(statesToTest.begin(), statesToTest.end());
     // We must have over 50% of the samples returning as matches
@@ -175,7 +163,7 @@ void UpdateState() {
         case State::Camera: {
             std::array<int, 8> camsToTest = {};
             for (unsigned camera = 0; camera < camsToTest.size(); ++camera) {
-                camsToTest[camera] = TestSamples_CNormMethod(CameraButton(camera), clr::CAM_BTN_COLOR_NRM, threshold);
+                camsToTest[camera] = TestSamples(CameraButton(camera), clr::CAM_BTN_COLOR_NRM, threshold);
             }
             // If we've confirmed the state then there's no doubt we can identify the camera
             GAME_STATE.SwitchToCam(CamData {
