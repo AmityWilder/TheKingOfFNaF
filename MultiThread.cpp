@@ -1,7 +1,6 @@
 #include "MultiThread.h"
 
 bool THREADS_SHOULD_LOOP = true;
-
 bool FIRST_TIME_SCREEN_UPDATE = false;
 
 void Produce() {
@@ -12,8 +11,7 @@ void Produce() {
     }
 }
 
-void Consume()
-{
+void Consume() {
     while (!FIRST_TIME_SCREEN_UPDATE) {
         Sleep(6); // Wait before checking again
     }

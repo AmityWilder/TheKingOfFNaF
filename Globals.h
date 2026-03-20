@@ -154,3 +154,4 @@ constexpr int SECS_PER_MIN = 60; // Real time
 constexpr int SECS_PER_HOUR = 45; // Game time
 constexpr int DECISECS_PER_SEC = 10;
 constexpr int DECISECS_PER_HOUR = SECS_PER_HOUR * DECISECS_PER_SEC;
+constexpr int MS_PER_DECISEC = 100;

@@ -10,7 +10,7 @@ void RefreshGameData() {
 }
 
 void ToggleMonitor() {
-    SimulateKey(VirtualKey::CameraToggle);
+    SimulateKeypress(VirtualKey::CameraToggle);
     Sleep(CAM_RESP_MS);
     UpdateState();
 }
@@ -87,7 +87,7 @@ namespace action {
         UpdateScreencap();
         if (IsNMBBStanding()) { // Double check--NMBB will kill us if we flash him wrongfully
             // If he is in fact still up, flash the light on him to put him back down
-            SimulateKey(VirtualKey::Flashlight);
+            SimulateKeypress(VirtualKey::Flashlight);
         }
     }
 }

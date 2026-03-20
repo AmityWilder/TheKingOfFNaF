@@ -37,7 +37,7 @@ enum class VirtualKey : int {
     Flashlight = 0x5A,
 };
 
-void SimulateKey(VirtualKey);
+void SimulateKeypress(VirtualKey);
 
 POINT GetMousePos();
 void SimulateMouseMove(long, long);
@@ -46,7 +46,12 @@ void SimulateMouseGoto(long, long);
 void SimulateMouseGoto(POINT);
 
 void SimulateMouseClick();
-void SimulateMouseClickAt(POINT);
+inline void SimulateMouseClickAt(POINT p) {
+    SimulateMouseGoto(p);
+    SimulateMouseClick();
+}
 
+// Assumes we are already in the office
 void OfficeLookLeft();
+// Assumes we are already in the office
 void OfficeLookRight();
