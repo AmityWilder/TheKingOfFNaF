@@ -108,50 +108,55 @@ namespace std {
 
 void GameState::DisplayData() const {
     std::cout << "\x1b[0;0H"
-           "Time: " << (int)(gameData.time.GetMinutes())
-        << ':' << (int)(gameData.time.GetSeconds() % SECS_PER_MIN)
-        << '.' << (int)(gameData.time.GetDeciseconds() % DECISECS_PER_SEC)
-        << "\n\nStatuses\n========"
-           "\nVentilation " << std::setw(7) << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good")
-        << "\nLeft  door  " << std::setw(6) << (gameData.IsDoorClosed(0) ? "closed" : "open")
-        << "\nFront vent  " << std::setw(6) << (gameData.IsDoorClosed(1) ? "closed" : "open")
-        << "\nRight door  " << std::setw(6) << (gameData.IsDoorClosed(2) ? "closed" : "open")
-        << "\nRight vent  " << std::setw(6) << (gameData.IsDoorClosed(3) ? "closed" : "open")
-        << "\nFlashlight  " << std::setw(3) << (gameData.IsFlashlightOn() ? "on" : "off")
-        << "\nGamestate\n========="
-           "\nState: " << std::setw(6) << state
-        << "\n                                 \x1b[1G";
+        << "Time: "
+            << (int)(gameData.time.GetMinutes())
+            << ':' << (int)(gameData.time.GetSeconds() % SECS_PER_MIN)
+            << '.' << (int)(gameData.time.GetDeciseconds() % DECISECS_PER_SEC) << '\n'
+        << '\n'
+        << std::setw(13) << std::right << "Ventilation: " << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good") << '\n'
+        << std::setw(13) << std::right << "Left door: "   << (gameData.IsDoorClosed(0) ? "closed" : "open") << '\n'
+        << std::setw(13) << std::right << "Front vent: "  << (gameData.IsDoorClosed(1) ? "closed" : "open") << '\n'
+        << std::setw(13) << std::right << "Right door: "  << (gameData.IsDoorClosed(2) ? "closed" : "open") << '\n'
+        << std::setw(13) << std::right << "Right vent: "  << (gameData.IsDoorClosed(3) ? "closed" : "open") << '\n'
+        << std::setw(13) << std::right << "Flashlight: "  << (gameData.IsFlashlightOn() ? "on" : "off") << '\n'
+        << '\n';
+
+    std::cout << '<';
+    for (const State s : { State::Camera, State::Vent, State::Duct, State::Office }) {
+        const char* delim = (s == state) ? "[]" : "  ";
+        std::cout << delim[0] << s << delim[1];
+    }
+    std::cout << '>';
+
+    std::cout << "\n                                 \x1b[1G";
+
     switch (state) {
         case State::Camera:
-            std::cout << "Looking at: " << std::setw(18) << cd.camera;
+            std::cout << std::setw(12) << std::right << "Looking at: " << cd.camera;
             break;
 
         case State::Office:
-            std::cout << "Yaw: " << od.officeYaw;
+            std::cout << std::setw(5) << std::right << "Yaw: " << od.officeYaw;
             break;
 
         default:
             std::cout << "TODO";
             break;
     }
+
     std::cout << "\n\n";
 }
 
 ColorHSL Color::ToHSL() const {
     CNorm col = Normalized();
 
-    double cmax;
-    double cmin;
+    // sadly windows.h creates macro definitions for ALL-LOWERCASE min/max that shadow the std::min/max functions :(
+    double cmax = max(col.r, max(col.g, col.b));
+    double cmin = min(col.r, min(col.g, col.b));
     int cmaxComp = (col.r > col.g)
         ? ((col.r > col.b) ? 0 : 2)
         : ((col.g > col.b) ? 1 : 2);
 
-    switch (cmaxComp) {
-        case 0: cmax = col.r; break;
-        case 1: cmax = col.g; break;
-        case 2: cmax = col.b; break;
-    }
-    cmin = min(col.r, min(col.g, col.b));
     double delta = cmax - cmin;
 
     double h, s, l;
