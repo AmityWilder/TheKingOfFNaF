@@ -143,8 +143,10 @@ namespace std {
 }
 
 void GameState::DisplayData() const {
-    std::cout << "\x1b[0;0H"
-        << "Time: " << gameData.time.GetMinutes() << '\n'
+    constexpr const char* RESET_CURSOR = "\x1b[0;0H";
+    constexpr const char* I_FORGET = "\x1b[1G";
+    std::cout << RESET_CURSOR
+        << "Time: " << gameData.time << '\n'
         << '\n'
         << std::setw(23) << std::right << "Ventilation: " << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good   ") << '\n'
         << std::setw(23) << std::right << "Left door: "   << (gameData.IsDoorClosed(0) ? "closed" : "open  ") << '\n'
@@ -152,16 +154,15 @@ void GameState::DisplayData() const {
         << std::setw(23) << std::right << "Right door: "  << (gameData.IsDoorClosed(2) ? "closed" : "open  ") << '\n'
         << std::setw(23) << std::right << "Right vent: "  << (gameData.IsDoorClosed(3) ? "closed" : "open  ") << '\n'
         << std::setw(23) << std::right << "Flashlight: "  << (gameData.IsFlashlightOn() ? "on " : "off") << '\n'
-        << std::setw(23) << std::right << "Funtime Foxy showtime: " << gameData.nextFFShow << '\n';
+        << std::setw(23) << std::right << "Funtime Foxy showtime: " << gameData.nextFFShow << '\n'
+        << '\n';
 
     std::cout << '<';
     for (const State s : { State::Camera, State::Vent, State::Duct, State::Office }) {
         const char* delim = (s == state) ? "[]" : "  ";
         std::cout << delim[0] << s << delim[1];
     }
-    std::cout << '>';
-
-    std::cout << "\n                                 \x1b[1G";
+    std::cout << ">\n";
 
     switch (state) {
         case State::Camera:
