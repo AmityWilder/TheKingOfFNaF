@@ -1,21 +1,21 @@
 #include "Globals.h"
 
-HWND WND_CONSOLE = GetConsoleWindow(); // Get a console handle
-HDC CONSOLE_HDC = GetDC(WND_CONSOLE); // Get a handle to device hdc
+HWND WND_CONSOLE;
+HDC CONSOLE_HDC;
 
-int SCREEN_HEIGHT = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-int SCREEN_WIDTH = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+int SCREEN_HEIGHT;
+int SCREEN_WIDTH;
 
-BYTE* SCREEN_DATA = new BYTE[CHANNELS_PER_COLOR * (size_t)SCREEN_WIDTH * (size_t)SCREEN_HEIGHT];
+BYTE* SCREEN_DATA;
 
 GameState GAME_STATE = GameState(); // All the information we have about the state of the game
 
 //HWND g_gameWindow = FindWindow(NULL, TEXT("Ultimate Custom Night"));
 //HDC g_gameDC = GetDC(g_gameWindow);
-HDC DESKTOP_HDC = GetDC(NULL); // get the desktop device context
-HDC INTERNAL_HDC = CreateCompatibleDC(DESKTOP_HDC); // create a device context to use ourselves
+HDC DESKTOP_HDC;
+HDC INTERNAL_HDC;
 
-HBITMAP H_BITMAP = CreateCompatibleBitmap(DESKTOP_HDC, SCREEN_WIDTH, SCREEN_HEIGHT);
+HBITMAP H_BITMAP;
 
 const POINT BTN_POSITIONS[] = {
     pnt::ofc::MASK_POS,
