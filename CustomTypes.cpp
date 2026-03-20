@@ -151,7 +151,7 @@ ColorHSL Color::ToHSL() const {
         case 1: cmax = col.g; break;
         case 2: cmax = col.b; break;
     }
-    cmin = std::min(col.r, std::min(col.g, col.b));
+    cmin = min(col.r, min(col.g, col.b));
     double delta = cmax - cmin;
 
     double h, s, l;

@@ -161,7 +161,7 @@ void UpdateState() {
     for (unsigned sysBtn = 0; sysBtn < statesToTest.size(); ++sysBtn) {
         statesToTest[sysBtn] = TestSamples_CNormMethod(SystemButton(sysBtn), clr::SYS_BTN_COLOR_NRM, threshold);
     }
-    int indexOfMax = MaxInArray(statesToTest.begin(), statesToTest.end());
+    size_t indexOfMax = MaxInArray(statesToTest.begin(), statesToTest.end());
     // We must have over 50% of the samples returning as matches
     if (statesToTest[indexOfMax] == 5) {
         newState = State(indexOfMax);
