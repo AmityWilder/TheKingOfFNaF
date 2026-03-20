@@ -79,43 +79,65 @@ double Color::Similarity(Color other) const {
 namespace std {
     std::ostream& operator<<(std::ostream& stream, State state) {
         switch (state) {
-            case State::Office: return stream << "Office";
-            case State::Camera: return stream << "Camera";
-            case State::Vent: return stream << "Vent";
-            case State::Duct: return stream << "Duct";
-            default: return stream << "Error";
+            case State::Office:
+                return stream << "Office";
+            case State::Camera:
+                return stream << "Camera";
+            case State::Vent:
+                return stream << "Vent";
+            case State::Duct:
+                return stream << "Duct";
+            default:
+                return stream << "Error";
         }
     }
 
     std::ostream& operator<<(std::ostream& stream, Camera cam) {
         switch (cam) {
-            case Camera::EastHall: return stream << "East hall";
-            case Camera::Kitchen: return stream << "Kitchen";
-            case Camera::PartsAndServices: return stream << "Parts and services";
-            case Camera::PirateCove: return stream << "Pirate cove";
-            case Camera::PrizeCounter: return stream << "Prize counter";
-            case Camera::ShowtimeStage: return stream << "Showtime stage";
-            case Camera::WestHall: return stream << "West hall";
-            case Camera::Closet: return stream << "Supply closet";
-            default: return stream << "Error";
+            case Camera::EastHall:
+                return stream << "East hall";
+            case Camera::Kitchen:
+                return stream << "Kitchen";
+            case Camera::PartsAndServices:
+                return stream << "Parts and services";
+            case Camera::PirateCove:
+                return stream << "Pirate cove";
+            case Camera::PrizeCounter:
+                return stream << "Prize counter";
+            case Camera::ShowtimeStage:
+                return stream << "Showtime stage";
+            case Camera::WestHall:
+                return stream << "West hall";
+            case Camera::Closet:
+                return stream << "Supply closet";
+            default:
+                return stream << "Error";
         }
     }
 
     std::ostream& operator<<(std::ostream& stream, Vent vent) {
         switch (vent) {
-            case Vent::Inactive: return stream << "Inactive";
-            case Vent::WestSnare: return stream << "West snare";
-            case Vent::NorthSnare: return stream << "North snare";
-            case Vent::EastSnare: return stream << "East snare";
-            default: return stream << "Error";
+            case Vent::Inactive:
+                return stream << "Inactive";
+            case Vent::WestSnare:
+                return stream << "West snare";
+            case Vent::NorthSnare:
+                return stream << "North snare";
+            case Vent::EastSnare:
+                return stream << "East snare";
+            default:
+                return stream << "Error";
         }
     }
 
     std::ostream& operator<<(std::ostream& stream, Duct duct) {
         switch (duct) {
-            case Duct::West: return stream << "West";
-            case Duct::East: return stream << "East";
-            default: return stream << "Error";
+            case Duct::West:
+                return stream << "West";
+            case Duct::East:
+                return stream << "East";
+            default:
+                return stream << "Error";
         }
     }
 }
