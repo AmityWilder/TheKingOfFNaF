@@ -3,7 +3,7 @@
 void UpdateScreencap() {
     BitBlt(INTERNAL_HDC, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, DESKTOP_HDC, 0, 0, SRCCOPY);
 
-    BITMAPINFOHEADER bmi = { 0 };
+    BITMAPINFOHEADER bmi { 0 };
     bmi.biSize = sizeof(BITMAPINFOHEADER);
     bmi.biPlanes = 1;
     bmi.biBitCount = 32;
@@ -16,7 +16,7 @@ void UpdateScreencap() {
 }
 
 unsigned long PixelIndex(long x, long y) {
-    return 4 * (unsigned)((y * (long)SCREEN_WIDTH) + x);
+    return CHANNELS_PER_COLOR * (unsigned)((y * (long)SCREEN_WIDTH) + x);
 }
 
 Color GetPixelColor(long x, long y) {

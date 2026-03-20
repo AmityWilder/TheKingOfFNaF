@@ -3,7 +3,12 @@
 #include <cmath>
 #include <iomanip>
 
-const uint16_t& ClockTime::GetDeciseconds() const {
+Vector3 Vector3::Normalized() const {
+    double invLength = 1.0 / sqrt(x*x + y*y + z*z);
+    return { x*invLength, y*invLength, z*invLength };
+}
+
+uint16_t ClockTime::GetDeciseconds() const {
     return deciseconds;
 }
 
@@ -20,26 +25,26 @@ uint8_t ClockTime::GetHour() const {
 }
 
 uint16_t ClockTime::GetWholeHourDeciseconds() const {
-    return ((uint16_t)GetHour() * DECISECONDS_PER_HOUR);
+    return ((uint16_t)GetHour() * DECISECS_PER_HOUR);
 }
 
 uint16_t ClockTime::GetDecisecondsSinceHour() const {
     return (GetDeciseconds() - GetWholeHourDeciseconds());
 }
 
-void ClockTime::UpdateTime(const uint16_t& newTime) {
+void ClockTime::UpdateTime(uint16_t newTime) {
     if (newTime > deciseconds && newTime < 6000 && newTime > 0 && ((newTime - deciseconds) < 10 || pingsSinceChange > 10)) {
         deciseconds = newTime;
         pingsSinceChange = 0;
     } else ++pingsSinceChange;
 }
 
-const int& ClockTime::GetPingsSinceChange() {
+int ClockTime::GetPingsSinceChange() const {
     return pingsSinceChange;
 }
 
 uint8_t Color::Gray() const {
-    return (uint8_t)(((int)r + (int)g + (int)b) / 3);
+    return (uint8_t)(((unsigned short)r + (unsigned short)g + (unsigned short)b) / 3);
 }
 
 uint8_t Color::RedDev() const {
@@ -57,25 +62,72 @@ uint8_t Color::BlueDev() const {
     return (uint8_t)sqrt((distFromMean * distFromMean) / 3);
 }
 
+namespace std {
+    std::ostream& operator<<(std::ostream& stream, State state) {
+        switch (state) {
+            case State::Office: return stream << "Office";
+            case State::Camera: return stream << "Camera";
+            case State::Vent: return stream << "Vent";
+            case State::Duct: return stream << "Duct";
+            default: return stream << "Error";
+        }
+    }
+
+    std::ostream& operator<<(std::ostream& stream, Camera cam) {
+        switch (cam) {
+            case Camera::EastHall: return stream << "East hall";
+            case Camera::Kitchen: return stream << "Kitchen";
+            case Camera::PartsAndServices: return stream << "Parts and services";
+            case Camera::PirateCove: return stream << "Pirate cove";
+            case Camera::PrizeCounter: return stream << "Prize counter";
+            case Camera::ShowtimeStage: return stream << "Showtime stage";
+            case Camera::WestHall: return stream << "West hall";
+            case Camera::Closet: return stream << "Supply closet";
+            default: return stream << "Error";
+        }
+    }
+
+    std::ostream& operator<<(std::ostream& stream, Vent vent) {
+        switch (vent) {
+            case Vent::Inactive: return stream << "Inactive";
+            case Vent::WestSnare: return stream << "West snare";
+            case Vent::NorthSnare: return stream << "North snare";
+            case Vent::EastSnare: return stream << "East snare";
+            default: return stream << "Error";
+        }
+    }
+
+    std::ostream& operator<<(std::ostream& stream, Duct duct) {
+        switch (duct) {
+            case Duct::West: return stream << "West";
+            case Duct::East: return stream << "East";
+            default: return stream << "Error";
+        }
+    }
+}
+
 void GameState::DisplayData() const {
-    std::cout << "\x1b[0;0HTime: "
-        << (int)(gameData.time.GetMinutes())
+    std::cout << "\x1b[0;0H"
+           "Time: " << (int)(gameData.time.GetMinutes())
         << ':' << (int)(gameData.time.GetSeconds() % SECS_PER_MIN)
         << '.' << (int)(gameData.time.GetDeciseconds() % DECISECS_PER_SEC)
-        << "\n\nStatuses\n========\nVentilation " << std::setw(7) << (gameData.ventilationNeedsReset ? "WARNING" : "good")
-        << "\nLeft  door  " << std::setw(6) << (gameData.doorsClosed[0] ? "closed" : "open")
-        << "\nFront vent  " << std::setw(6) << (gameData.doorsClosed[1] ? "closed" : "open")
-        << "\nRight door  " << std::setw(6) << (gameData.doorsClosed[2] ? "closed" : "open")
-        << "\nRight vent  " << std::setw(6) << (gameData.doorsClosed[3] ? "closed" : "open")
-        << "\nFlashlight  " << std::setw(3) << (gameData.flashlight ? "on" : "off")
-        << "\nGamestate\n=========\nState: " << std::setw(6) << state << "\n                                 \x1b[1G";
+        << "\n\nStatuses\n========"
+           "\nVentilation " << std::setw(7) << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good")
+        << "\nLeft  door  " << std::setw(6) << (gameData.IsDoorClosed(0) ? "closed" : "open")
+        << "\nFront vent  " << std::setw(6) << (gameData.IsDoorClosed(1) ? "closed" : "open")
+        << "\nRight door  " << std::setw(6) << (gameData.IsDoorClosed(2) ? "closed" : "open")
+        << "\nRight vent  " << std::setw(6) << (gameData.IsDoorClosed(3) ? "closed" : "open")
+        << "\nFlashlight  " << std::setw(3) << (gameData.IsFlashlightOn() ? "on" : "off")
+        << "\nGamestate\n========="
+           "\nState: " << std::setw(6) << state
+        << "\n                                 \x1b[1G";
     switch (state) {
         case State::Camera:
-            std::cout << "Looking at: " << std::setw(18) << stateData.cd.camera;
+            std::cout << "Looking at: " << std::setw(18) << cd.camera;
             break;
 
         case State::Office:
-            std::cout << "Yaw: " << stateData.od.officeYaw;
+            std::cout << "Yaw: " << od.officeYaw;
             break;
 
         default:

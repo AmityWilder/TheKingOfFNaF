@@ -1,5 +1,7 @@
-#pragma once
+#ifndef INPUT_PROCESSING_H
+#define INPUT_PROCESSING_H
 #include "Input.h"
+#include <algorithm>
 
 ////////////////////////////////////////////////////////////////////////////////////
 // This is where the input we've taken from the game gets turned into useful data //
@@ -25,7 +27,7 @@ int TestSamples_GrayMethod(POINT center, uint8_t compare, uint8_t maxDifference)
 // Returns the position of the maximum value
 template<class I>
 size_t MaxInArray(I begin, I end) {
-    return std::distance(begin, std::max_element(begin, end))
+    return std::distance(begin, std::max_element(begin, end));
 }
 
 void LocateOfficeLamp(); // For finding the yaw of the office
@@ -33,3 +35,5 @@ void LocateOfficeLamp(); // For finding the yaw of the office
 bool IsNMBBStanding();
 
 void UpdateState();
+
+#endif // INPUT_PROCESSING_H

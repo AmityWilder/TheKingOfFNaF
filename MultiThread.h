@@ -1,4 +1,5 @@
-#pragma once
+#ifndef MULTITHREAD_H
+#define MULTITHREAD_H
 #include "InputProcessing.h"
 #include "GameActions.h"
 #include <thread>
@@ -13,3 +14,5 @@ void Consume();
 void Direct();
 
 void CreateHelpers();
+
+#endif // MULTITHREAD_H

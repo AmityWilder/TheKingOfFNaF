@@ -6,10 +6,9 @@ HDC CONSOLE_HDC = GetDC(WND_CONSOLE); // Get a handle to device hdc
 int SCREEN_HEIGHT = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 int SCREEN_WIDTH = GetSystemMetrics(SM_CXVIRTUALSCREEN);
 
-constexpr size_t CHANNELS_PER_COLOR = 4;
 BYTE* SCREEN_DATA = new BYTE[CHANNELS_PER_COLOR * (size_t)SCREEN_WIDTH * (size_t)SCREEN_HEIGHT];
 
-GameState GAME_STATE; // All the information we have about the state of the game
+GameState GAME_STATE = GameState(); // All the information we have about the state of the game
 
 //HWND g_gameWindow = FindWindow(NULL, TEXT("Ultimate Custom Night"));
 //HDC g_gameDC = GetDC(g_gameWindow);

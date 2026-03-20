@@ -1,6 +1,8 @@
-#pragma once
+#ifndef INPUT_H
+#define INPUT_H
 #include "CustomTypes.h"
 #include "Globals.h"
+#include <windows.h>
 
 ///////////////////////////////////////////////
 // This is where we take input from the game //
@@ -14,3 +16,5 @@ unsigned long PixelIndex(long x, long y);
 
 Color GetPixelColor(long x, long y);
 Color GetPixelColor(POINT pos);
+
+#endif // INPUT_H

@@ -1,5 +1,4 @@
 #include "GameActions.h"
-#include "Globals.h"
 
 // Updates all known game information
 void RefreshGameData() {
@@ -16,20 +15,20 @@ void ToggleMonitor() {
 }
 
 void OpenMonitorIfClosed() {
-    if (GAME_STATE.state == State::Office) {
+    if (GAME_STATE.GetState() == State::Office) {
         ToggleMonitor();
     }
 }
 
 void CloseMonitorIfOpen() {
-    if (GAME_STATE.state != State::Office) {
+    if (GAME_STATE.GetState() != State::Office) {
         ToggleMonitor();
     }
 }
 
 void EnsureSystem(State system) {
     OpenMonitorIfClosed();
-    if (GAME_STATE.state != system) {
+    if (GAME_STATE.GetState() != system) {
         SimulateMouseClickAt(GetButtonPos(SystemButton(system)));
     }
 }
@@ -41,7 +40,7 @@ void OpenCameraIfClosed() {
 
 // `cam` only used if `state == State::Camera`
 void EnterGameState(State state, Camera cam) {
-    if (GAME_STATE.state != state) {
+    if (GAME_STATE.GetState() != state) {
         if (state == State::Office) {
             CloseMonitorIfOpen();
         } else {
@@ -121,7 +120,7 @@ void ActOnGameData() {
      *   Thankfully these events are usually either very short in duration or can be handled by rote.
      **************************************************************************************************/
 
-    if (GAME_STATE.state == State::Office) {
+    if (GAME_STATE.GetState() == State::Office) {
         if (IsNMBBStanding()) {
             action::HandleNMBB();
         }

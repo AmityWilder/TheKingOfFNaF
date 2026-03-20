@@ -1,6 +1,7 @@
+#ifndef OUTPUT_H
+#define OUTPUT_H
 #include "CustomTypes.h"
 #include "Globals.h"
-#pragma once
 
 ////////////////////////////////////////////////////
 // This is where we send basic output to the game //
@@ -55,3 +56,5 @@ inline void SimulateMouseClickAt(POINT p) {
 void OfficeLookLeft();
 // Assumes we are already in the office
 void OfficeLookRight();
+
+#endif // OUTPUT_H

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GAME_ACTIONS_H
+#define GAME_ACTIONS_H
 #include "Globals.h"
 #include "InputProcessing.h"
 #include "Output.h"
@@ -13,9 +14,9 @@ void OfficeLookRight();
 // Updates all known game information
 void RefreshGameData();
 
-void EnsureSystem(State state); // TODO: think of a better name
+void EnsureSystem(State state);
 void OpenCameraIfClosed();
-void OpenMonitorIfClosed(); // Like OpenCameraIfClosed(), but slightly faster because it doesn't take into account the system we're on
+void OpenMonitorIfClosed();
 void CloseMonitorIfOpen();
 void EnterGameState(State state, Camera cam = Camera::WestHall);
 
@@ -27,3 +28,5 @@ namespace action {
 }
 
 void ActOnGameData();
+
+#endif // GAME_ACTIONS_H

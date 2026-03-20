@@ -94,14 +94,14 @@ void SimulateMouseClick() {
 }
 
 void OfficeLookLeft() {
-    if (GAME_STATE.state == State::Office) { // We cannot look left/right in cameras
+    if (GAME_STATE.GetState() == State::Office) { // We cannot look left/right in cameras
         SimulateMouseGoto(8, 540);
         Sleep(5 * MS_PER_DECISEC);
     }
 }
 
 void OfficeLookRight() {
-    if (GAME_STATE.state == State::Office) { // We cannot look left/right in cameras
+    if (GAME_STATE.GetState() == State::Office) { // We cannot look left/right in cameras
         SimulateMouseGoto(1910, 540);
         Sleep(5 * MS_PER_DECISEC);
     }

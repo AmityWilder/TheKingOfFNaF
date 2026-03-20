@@ -1,6 +1,7 @@
 #include "InputProcessing.h"
 #include <array>
 #include <algorithm>
+#include <cassert>
 
 // Input should be top-left corner of the number followed by the size
 char ReadNumber(int x, int y) {
@@ -15,7 +16,7 @@ char ReadNumber(int x, int y) {
         { 0,7 },
         { 10,7 }
     };
-    constexpr unsigned char threshold = 100; // Minimum brightness value of the pixel
+    constexpr uint8_t threshold = 100; // Minimum brightness value of the pixel
 
     int guessBitflags = 0;
     for (int sample = 0; sample < 9; ++sample) {
@@ -115,13 +116,13 @@ int TestSamples_ColorMethod(POINT center, Color compare, double threshold) {
     return matchCount;
 }
 
-int TestSamples_GrayMethod(POINT center, unsigned char compare, unsigned char maxDifference) {
+int TestSamples_GrayMethod(POINT center, uint8_t compare, uint8_t maxDifference) {
     POINT samplePoint[5];
     GenerateSamplePoints(samplePoint, center, 4);
 
     int matchCount = 0;
     for (int i = 0; i < 5; ++i) {
-        unsigned char sample = GetPixelColor(samplePoint[i]).Gray();
+        uint8_t sample = GetPixelColor(samplePoint[i]).Gray();
         if (abs(sample - compare) > maxDifference) ++matchCount;
     }
     return matchCount;
@@ -136,7 +137,9 @@ void LocateOfficeLamp() {
         if (GetPixelColor(x, y).Gray() > threshold) {
             // 100% of the samples must be 80% matching. Flickering be damned.
             if (TestSamples_GrayMethod({ x,y }, 255, 20) == 5) {
-                GAME_STATE.stateData.od.officeYaw = ((double)x - (double)start) / (double)width;
+                OfficeData* od = GAME_STATE.GetOfficeData();
+                assert(!!od);
+                od->officeYaw = ((double)x - (double)start) / (double)width;
                 break;
             }
         }
@@ -155,7 +158,7 @@ void UpdateState() {
     State newState = State::Office;
     // List of how many samples returned as matches for each of the buttons being tested
     std::array<int, 3> statesToTest = { 0,0,0 };
-    for (int sysBtn = 0; sysBtn < statesToTest.size(); ++sysBtn) {
+    for (unsigned sysBtn = 0; sysBtn < statesToTest.size(); ++sysBtn) {
         statesToTest[sysBtn] = TestSamples_CNormMethod(SystemButton(sysBtn), clr::SYS_BTN_COLOR_NRM, threshold);
     }
     int indexOfMax = MaxInArray(statesToTest.begin(), statesToTest.end());
@@ -166,12 +169,12 @@ void UpdateState() {
     // Update the global state
     switch (newState) {
         case State::Office:
-            GAME_STATE.SwitchToOffice();
+            GAME_STATE.SwitchToOffice(OfficeData { });
             break;
 
         case State::Camera: {
             std::array<int, 8> camsToTest = {};
-            for (int camera = 0; camera < camsToTest.size(); ++camera) {
+            for (unsigned camera = 0; camera < camsToTest.size(); ++camera) {
                 camsToTest[camera] = TestSamples_CNormMethod(CameraButton(camera), clr::CAM_BTN_COLOR_NRM, threshold);
             }
             // If we've confirmed the state then there's no doubt we can identify the camera
@@ -182,11 +185,11 @@ void UpdateState() {
         break;
 
         case State::Vent:
-            GAME_STATE.SwitchToVent();
+            GAME_STATE.SwitchToVent(VentData { });
             break;
 
         case State::Duct:
-            GAME_STATE.SwitchToDuct();
+            GAME_STATE.SwitchToDuct(DuctData { });
             break;
     }
 }

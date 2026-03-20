@@ -1,5 +1,7 @@
-#pragma once
+#ifndef GLOBALS
+#define GLOBALS
 #include "CustomTypes.h"
+#include <windows.h>
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 // Here, all of the variables & constants used throughout the project are declared/defined //
@@ -18,6 +20,7 @@ extern HDC CONSOLE_HDC;
 extern int SCREEN_HEIGHT;
 extern int SCREEN_WIDTH;
 
+constexpr size_t CHANNELS_PER_COLOR = 4;
 extern BYTE* SCREEN_DATA;
 
 extern GameState GAME_STATE;
@@ -155,3 +158,5 @@ constexpr int SECS_PER_HOUR = 45; // Game time
 constexpr int DECISECS_PER_SEC = 10;
 constexpr int DECISECS_PER_HOUR = SECS_PER_HOUR * DECISECS_PER_SEC;
 constexpr int MS_PER_DECISEC = 100;
+
+#endif // GLOBALS
