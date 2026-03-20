@@ -39,6 +39,15 @@ int ClockTime::GetPingsSinceChange() const {
     return pingsSinceChange;
 }
 
+namespace std {
+    std::ostream& operator<<(std::ostream& stream, ClockTime time) {
+        return stream
+            << (int)(time.GetMinutes())
+            << ':' << (int)(time.GetSeconds() % SECS_PER_MIN)
+            << '.' << (int)(time.GetDeciseconds() % DECISECS_PER_SEC);
+    }
+}
+
 CNorm CNorm::VNormalized() const {
     const double invLength = 1.0 / sqrt(r*r + g*g + b*b);
     return { r*invLength, g*invLength, b*invLength };
@@ -113,18 +122,15 @@ namespace std {
 
 void GameState::DisplayData() const {
     std::cout << "\x1b[0;0H"
-        << "Time: "
-            << (int)(gameData.time.GetMinutes())
-            << ':' << (int)(gameData.time.GetSeconds() % SECS_PER_MIN)
-            << '.' << (int)(gameData.time.GetDeciseconds() % DECISECS_PER_SEC) << '\n'
+        << "Time: " << gameData.time.GetMinutes() << '\n'
         << '\n'
-        << std::setw(13) << std::right << "Ventilation: " << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good   ") << '\n'
-        << std::setw(13) << std::right << "Left door: "   << (gameData.IsDoorClosed(0) ? "closed" : "open  ") << '\n'
-        << std::setw(13) << std::right << "Front vent: "  << (gameData.IsDoorClosed(1) ? "closed" : "open  ") << '\n'
-        << std::setw(13) << std::right << "Right door: "  << (gameData.IsDoorClosed(2) ? "closed" : "open  ") << '\n'
-        << std::setw(13) << std::right << "Right vent: "  << (gameData.IsDoorClosed(3) ? "closed" : "open  ") << '\n'
-        << std::setw(13) << std::right << "Flashlight: "  << (gameData.IsFlashlightOn() ? "on " : "off") << '\n'
-        << '\n';
+        << std::setw(23) << std::right << "Ventilation: " << (gameData.DoesVentilationNeedReset() ? "WARNING" : "good   ") << '\n'
+        << std::setw(23) << std::right << "Left door: "   << (gameData.IsDoorClosed(0) ? "closed" : "open  ") << '\n'
+        << std::setw(23) << std::right << "Front vent: "  << (gameData.IsDoorClosed(1) ? "closed" : "open  ") << '\n'
+        << std::setw(23) << std::right << "Right door: "  << (gameData.IsDoorClosed(2) ? "closed" : "open  ") << '\n'
+        << std::setw(23) << std::right << "Right vent: "  << (gameData.IsDoorClosed(3) ? "closed" : "open  ") << '\n'
+        << std::setw(23) << std::right << "Flashlight: "  << (gameData.IsFlashlightOn() ? "on " : "off") << '\n'
+        << std::setw(23) << std::right << "Funtime Foxy showtime: " << gameData.nextFFShow << '\n';
 
     std::cout << '<';
     for (const State s : { State::Camera, State::Vent, State::Duct, State::Office }) {
@@ -137,29 +143,32 @@ void GameState::DisplayData() const {
 
     switch (state) {
         case State::Camera:
-            std::cout << std::setw(12) << std::right << "Looking at: " << cd.camera;
+            std::cout << std::setw(12) << std::right << "Looking at: " << "CAM 0" << ((int)cd.camera + 1)
+                << " | " << std::setw(18) << std::left << cd.camera << '\n';
             break;
 
         case State::Office:
             std::cout
                 << std::setw(14) << std::right << "Yaw: " << od.officeYaw << '\n'
-                << std::setw(14) << std::right << "Nightmare BB: " << (IsNMBBStanding() ? "standing" : "sitting ");
+                << std::setw(14) << std::right << "Nightmare BB: " << (IsNMBBStanding() ? "standing" : "sitting ") << '\n';
             break;
 
         default:
-            std::cout << "TODO";
+            std::cout << "TODO\n";
             break;
     }
 
-    std::cout << "\n\n";
+    std::cout << '\n';
 }
 
 ColorHSL Color::ToHSL() const {
     const CNorm col = Normalized();
 
     // sadly windows.h creates macro definitions for ALL-LOWERCASE min/max that shadow the std::min/max functions :(
-    const double cmax = max(col.r, max(col.g, col.b));
-    const double cmin = min(col.r, min(col.g, col.b));
+#undef max
+#undef min
+    const double cmax = std::max(col.r, std::max(col.g, col.b));
+    const double cmin = std::min(col.r, std::min(col.g, col.b));
     const int cmaxComp = (col.r > col.g)
         ? ((col.r > col.b) ? 0 : 2)
         : ((col.g > col.b) ? 1 : 2);

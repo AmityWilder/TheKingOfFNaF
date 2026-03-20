@@ -85,6 +85,10 @@ public:
     int GetPingsSinceChange() const;
 };
 
+namespace std {
+    std::ostream& operator<<(std::ostream& stream, ClockTime time);
+}
+
 // What gamestate we are in (what we can see on the screen)
 enum class State : unsigned char {
     Camera = 0,
@@ -163,10 +167,12 @@ class GameData {
 
 public:
     ClockTime time;
+    ClockTime nextFFShow;
 
     constexpr GameData() :
         flags { 0 },
-        time()
+        time(),
+        nextFFShow()
     {}
 
     constexpr bool DoesVentilationNeedReset() const {
@@ -219,6 +225,8 @@ class GameState {
     }; // Information about the current state that can tell us how to interpret information
 
 public:
+    GameData gameData;
+
     State GetState() const {
         return state;
     }
@@ -265,8 +273,6 @@ public:
     DuctData* GetDuctData() {
         return (state == State::Duct) ? &dd : nullptr;
     }
-
-    GameData gameData;
 
     constexpr GameState() :
         state { State::Office },
