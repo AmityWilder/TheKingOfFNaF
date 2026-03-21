@@ -577,19 +577,13 @@ class ScreenDataGuard;
 
 class ScreenData {
     bool isShared;
-    union {
-        const BYTE* sharedData;
-        BYTE* exclusiveData;
-    };
+    BYTE* data;
 
     friend class ScreenDataGuard;
-    ScreenData(BYTE* data) :
-        isShared { false },
-        exclusiveData { data }
-    {}
-    ScreenData(const BYTE* data) :
-        isShared { true },
-        sharedData { data }
+
+    ScreenData(bool isShared, BYTE* data) :
+        isShared { isShared },
+        data { data }
     {}
 
 public:
@@ -597,16 +591,16 @@ public:
 
     void UpdateScreencap() {
         BitBlt(INTERNAL_HDC, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, DESKTOP_HDC, 0, 0, SRCCOPY);
-        GetDIBits(DESKTOP_HDC, H_BITMAP, 0, SCREEN_HEIGHT, exclusiveData, &BMI, DIB_RGB_COLORS);
+        GetDIBits(DESKTOP_HDC, H_BITMAP, 0, SCREEN_HEIGHT, data, &BMI, DIB_RGB_COLORS);
     }
 
     Color GetPixelColor(long x, long y) const {
         size_t index = CHANNELS_PER_COLOR * (size_t)((y * (long)SCREEN_WIDTH) + x);
 
         Color output = {
-            sharedData[index + 2], // Red
-            sharedData[index + 1], // Green
-            sharedData[index],     // Blue
+            data[index + 2], // Red
+            data[index + 1], // Green
+            data[index],     // Blue
         };
 
     #ifdef _DEBUG
@@ -627,6 +621,11 @@ class ScreenDataGuard {
     std::shared_mutex mutex;
     BYTE* data = nullptr;
 
+#ifdef _DEBUG
+    int exclusiveLocks = 0;
+    int sharedLocks = 0;
+#endif
+
 public:
     void ResizeBuffer(size_t size) {
         mutex.lock();
@@ -636,19 +635,43 @@ public:
     }
 
     const ScreenData LockShared() {
+    #ifdef _DEBUG
+        std::cout << "Thread " << std::this_thread::get_id() << ": Waiting for shared lock on SCREEN_DATA... " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
+    #endif
         mutex.lock_shared();
-        return ScreenData(data);
+    #ifdef _DEBUG
+        ++sharedLocks;
+        std::cout << "Thread " << std::this_thread::get_id() << ": Shared lock on SCREEN_DATA obtained. " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
+    #endif
+        return ScreenData { true, data };
     }
+
     void UnlockShared() {
         mutex.unlock_shared();
+    #ifdef _DEBUG
+        --sharedLocks;
+        std::cout << "Thread " << std::this_thread::get_id() << ": Shared lock on SCREEN_DATA released. " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
+    #endif
     }
 
     ScreenData Lock() {
+    #ifdef _DEBUG
+        std::cout << "Thread " << std::this_thread::get_id() << ": Waiting for exclusive lock on SCREEN_DATA... " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
+    #endif
         mutex.lock();
-        return ScreenData(data);
+    #ifdef _DEBUG
+        ++exclusiveLocks;
+        std::cout << "Thread " << std::this_thread::get_id() << ": Exclusive lock on SCREEN_DATA obtained. " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
+    #endif
+        return ScreenData { false, data };
     }
+
     void Unlock() {
         mutex.unlock();
+    #ifdef _DEBUG
+        --exclusiveLocks;
+        std::cout << "Thread " << std::this_thread::get_id() << ": Exclusive lock on SCREEN_DATA released. " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
+    #endif
     }
 
     void UpdateScreencap() {
@@ -1288,7 +1311,7 @@ void GameState::DisplayData() const {
     std::cout << '\n';
 }
 
-std::atomic<bool> THREADS_SHOULD_LOOP = true;
+std::atomic<bool> THREADS_SHOULD_LOOP;
 
 void Produce() {
     while (THREADS_SHOULD_LOOP.load()) {
@@ -1318,25 +1341,20 @@ void CreateHelpers() {
 
     // !! SAFETY !!
     // Make sure that user control override doesn't disable the user from closing the program
-    while (true) {
-        Sleep(2); // Give the user time to move the mouse
-
-        bool shouldYeildControl = GetKeyState((int)VirtualKey::Esc); // Escape can't be toggled so we can ignore that bit
-        if (!shouldYeildControl) {
-            POINT p = GetMousePos();
-            // If the mouse is touching any edge (easy to flick your mouse to those positions)
-            shouldYeildControl = p.x <= 0 || p.y <= 0 || p.x >= SCREEN_WIDTH || p.y >= SCREEN_HEIGHT;
-        }
-        if (shouldYeildControl) {
-            std::cout << "User has chosen to reclaim control. Task ended.\n";
-            THREADS_SHOULD_LOOP.store(false); // This tells the worker threads to break
-            break;
+    while (THREADS_SHOULD_LOOP.load()) {
+        Sleep(2); // Give the user time to provide input
+        if (GetKeyState((int)VirtualKey::Esc) & ~1) { // mask to ignore the "toggled" bit
+            std::cout.clear();
+            std::cout << "\nUser has chosen to reclaim control. Task ended.\n";
+            THREADS_SHOULD_LOOP.store(false); // This tells the worker threads to stop
         }
     }
 
+    std::cout << "Waiting on worker threads...\n";
     // Wait for threads to safely finish their respective functions before destructing them
     producer.join();
     consumer.join();
+    std::cout << "Worker threads joined.\n";
 }
 
 void SimulateKeyDown(VirtualKey key) {
