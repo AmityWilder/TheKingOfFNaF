@@ -83,6 +83,8 @@ public:
 
     void UpdateTime(uint16_t);
     int GetPingsSinceChange() const;
+
+    bool IsDefault() const;
 };
 
 namespace std {

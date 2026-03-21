@@ -44,10 +44,15 @@ int main() {
 
         RefreshGameData(); // Using the screencap we just generated, update the game data statuses for decision making
 
-        GAME_STATE.DisplayData(); // Output the data for the user to view
+        if (!GAME_STATE.gameData.time.IsDefault()) {
+            GAME_STATE.DisplayData(); // Output the data for the user to view
+        } else {
+            std::cout << "Waiting for clock to be visible...";
+        }
         //BitBlt(g_hConsoleDC, 0, 0, g_screenWidth, g_screenHeight, g_hInternal, 0, 0, SRCCOPY);
 
         ActOnGameData(); // Based upon the game data, perform all actions necessary to return the game to a neutral state
+        std::cout << RESET_CURSOR;
     }
 
     // WRAP UP //

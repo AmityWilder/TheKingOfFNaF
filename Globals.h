@@ -37,6 +37,8 @@ extern HBITMAP H_BITMAP;
 // Global constants -- These give context to unchanging values
 //
 
+constexpr const char* RESET_CURSOR = "\x1b[0;0H";
+
 // Important positions on the screen
 namespace pnt {
     // Clock position
