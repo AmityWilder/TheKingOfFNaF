@@ -17,6 +17,10 @@
 // Global constants -- These give context to unchanging values
 //
 
+#ifdef _DEBUG
+//#define DEBUG_MUTEX
+#endif
+
 constexpr const char* RESET_CURSOR = "\x1b[0;0H";
 
 // Important positions on the screen
@@ -621,7 +625,7 @@ class ScreenDataGuard {
     std::shared_mutex mutex;
     BYTE* data = nullptr;
 
-#ifdef _DEBUG
+#ifdef DEBUG_MUTEX
     int exclusiveLocks = 0;
     int sharedLocks = 0;
 #endif
@@ -635,11 +639,11 @@ public:
     }
 
     const ScreenData LockShared() {
-    #ifdef _DEBUG
+    #ifdef DEBUG_MUTEX
         std::cout << "Thread " << std::this_thread::get_id() << ": Waiting for shared lock on SCREEN_DATA... " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
     #endif
         mutex.lock_shared();
-    #ifdef _DEBUG
+    #ifdef DEBUG_MUTEX
         ++sharedLocks;
         std::cout << "Thread " << std::this_thread::get_id() << ": Shared lock on SCREEN_DATA obtained. " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
     #endif
@@ -648,18 +652,18 @@ public:
 
     void UnlockShared() {
         mutex.unlock_shared();
-    #ifdef _DEBUG
+    #ifdef DEBUG_MUTEX
         --sharedLocks;
         std::cout << "Thread " << std::this_thread::get_id() << ": Shared lock on SCREEN_DATA released. " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
     #endif
     }
 
     ScreenData Lock() {
-    #ifdef _DEBUG
+    #ifdef DEBUG_MUTEX
         std::cout << "Thread " << std::this_thread::get_id() << ": Waiting for exclusive lock on SCREEN_DATA... " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
     #endif
         mutex.lock();
-    #ifdef _DEBUG
+    #ifdef DEBUG_MUTEX
         ++exclusiveLocks;
         std::cout << "Thread " << std::this_thread::get_id() << ": Exclusive lock on SCREEN_DATA obtained. " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
     #endif
@@ -668,7 +672,7 @@ public:
 
     void Unlock() {
         mutex.unlock();
-    #ifdef _DEBUG
+    #ifdef DEBUG_MUTEX
         --exclusiveLocks;
         std::cout << "Thread " << std::this_thread::get_id() << ": Exclusive lock on SCREEN_DATA released. " << sharedLocks << " shared, " << exclusiveLocks << " exclusive\n";
     #endif
