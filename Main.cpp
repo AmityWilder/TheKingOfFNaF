@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <shared_mutex>
 #include <thread>
 #include <windows.h>
 
@@ -92,6 +93,8 @@ constexpr int MS_PER_DECISEC = 100;
 ////////////////////////////////////////////////////
 // Here we declare/define the non-primitive types //
 ////////////////////////////////////////////////////
+
+constexpr size_t CHANNELS_PER_COLOR = 4; // Bitmap channels, not `Color` channels
 
 // Normalized RGB color
 struct CNorm {
@@ -537,11 +540,13 @@ HDC CONSOLE_HDC;
 int SCREEN_HEIGHT;
 int SCREEN_WIDTH;
 
-BYTE* SCREEN_DATA;
+class ScreenDataGuard;
 
-constexpr size_t CHANNELS_PER_COLOR = 4;
-
-GameState GAME_STATE = GameState(); // All the information we have about the state of the game
+///////////////////////////////////////////////
+// This is where we take input from the game //
+// e.g.                                      //
+// - Test pixel color at { 253, 1004 }       //
+///////////////////////////////////////////////
 
 //HWND g_gameWindow = FindWindow(NULL, TEXT("Ultimate Custom Night"));
 //HDC g_gameDC = GetDC(g_gameWindow);
@@ -550,6 +555,116 @@ HDC INTERNAL_HDC; // create a device context to use ourselves
 
 // create a bitmap
 HBITMAP H_BITMAP;
+
+BITMAPINFO BMI = {
+    .bmiHeader = {
+        .biSize = sizeof(BITMAPINFOHEADER),
+        .biWidth = SCREEN_WIDTH,
+        .biHeight = -SCREEN_HEIGHT,
+        .biPlanes = 1,
+        .biBitCount = 32,
+        .biCompression = BI_RGB,
+        .biSizeImage = 0, // 3 * ScreenX * ScreenY; (position, not size)
+        .biXPelsPerMeter = 0,
+        .biYPelsPerMeter = 0,
+        .biClrUsed = 0,
+        .biClrImportant = 0,
+    },
+    .bmiColors = { 0 },
+};
+
+class ScreenDataGuard;
+
+class ScreenData {
+    bool isShared;
+    union {
+        const BYTE* sharedData;
+        BYTE* exclusiveData;
+    };
+
+    friend class ScreenDataGuard;
+    ScreenData(BYTE* data) :
+        isShared { false },
+        exclusiveData { data }
+    {}
+    ScreenData(const BYTE* data) :
+        isShared { true },
+        sharedData { data }
+    {}
+
+public:
+    ~ScreenData();
+
+    void UpdateScreencap() {
+        BitBlt(INTERNAL_HDC, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, DESKTOP_HDC, 0, 0, SRCCOPY);
+        GetDIBits(DESKTOP_HDC, H_BITMAP, 0, SCREEN_HEIGHT, exclusiveData, &BMI, DIB_RGB_COLORS);
+    }
+
+    Color GetPixelColor(long x, long y) const {
+        size_t index = CHANNELS_PER_COLOR * (size_t)((y * (long)SCREEN_WIDTH) + x);
+
+        Color output = {
+            sharedData[index + 2], // Red
+            sharedData[index + 1], // Green
+            sharedData[index],     // Blue
+        };
+
+    #ifdef _DEBUG
+        // If the function is working correctly, you shouldn't see anything change.
+        // If there's something wrong, the pixel being misread will be overwritten with the color being read.
+        SetPixel(CONSOLE_HDC, (int)x, (int)y, output);
+    #endif
+
+        return output;
+    }
+
+    Color GetPixelColor(POINT pos) const {
+        return GetPixelColor(pos.x, pos.y);
+    }
+};
+
+class ScreenDataGuard {
+    std::shared_mutex mutex;
+    BYTE* data = nullptr;
+
+public:
+    void ResizeBuffer(size_t size) {
+        mutex.lock();
+        delete[] data; // No effect if data is nullptr
+        if (size > 0) data = new BYTE[size];
+        mutex.unlock();
+    }
+
+    const ScreenData LockShared() {
+        mutex.lock_shared();
+        return ScreenData(data);
+    }
+    void UnlockShared() {
+        mutex.unlock_shared();
+    }
+
+    ScreenData Lock() {
+        mutex.lock();
+        return ScreenData(data);
+    }
+    void Unlock() {
+        mutex.unlock();
+    }
+
+    void UpdateScreencap() {
+        Lock().UpdateScreencap();
+    }
+} SCREEN_DATA;
+
+ScreenData::~ScreenData() {
+    if (isShared) {
+        SCREEN_DATA.UnlockShared();
+    } else {
+        SCREEN_DATA.Unlock();
+    }
+}
+
+GameState GAME_STATE = GameState(); // All the information we have about the state of the game
 
 // These enable us to put the buttons in an array and choose from them instead of just using the literal names
 // If you're trying to get the position of just the one thing and don't need to do any sort of "switch" thing, please don't use this. It adds additional steps.
@@ -634,53 +749,6 @@ POINT GetButtonPos(Button button) {
     return BTN_POSITIONS[(int)button];
 }
 
-///////////////////////////////////////////////
-// This is where we take input from the game //
-// e.g.                                      //
-// - Test pixel color at { 253, 1004 }       //
-///////////////////////////////////////////////
-
-void UpdateScreencap() {
-    BitBlt(INTERNAL_HDC, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, DESKTOP_HDC, 0, 0, SRCCOPY);
-    BITMAPINFO bmi {
-        .bmiHeader = {
-            .biSize = sizeof(BITMAPINFOHEADER),
-            .biWidth = SCREEN_WIDTH,
-            .biHeight = -SCREEN_HEIGHT,
-            .biPlanes = 1,
-            .biBitCount = 32,
-            .biCompression = BI_RGB,
-            .biSizeImage = 0, // 3 * ScreenX * ScreenY; (position, not size)
-            .biXPelsPerMeter = 0,
-            .biYPelsPerMeter = 0,
-            .biClrUsed = 0,
-            .biClrImportant = 0,
-        },
-        .bmiColors = { 0 },
-    };
-    GetDIBits(DESKTOP_HDC, H_BITMAP, 0, SCREEN_HEIGHT, SCREEN_DATA, &bmi, DIB_RGB_COLORS);
-}
-
-Color GetPixelColor(long x, long y) {
-    unsigned long index = (unsigned long)CHANNELS_PER_COLOR * (unsigned long)((y * (long)SCREEN_WIDTH) + x);
-
-    Color output = {
-        SCREEN_DATA[index + 2u],    // Red
-        SCREEN_DATA[index + 1u],    // Green
-        SCREEN_DATA[index],         // Blue
-    };
-
-#ifdef _DEBUG
-    SetPixel(CONSOLE_HDC, (int)x, (int)y, output);
-#endif
-
-    return output;
-}
-
-Color GetPixelColor(POINT pos) {
-    return GetPixelColor(pos.x, pos.y);
-}
-
 ////////////////////////////////////////////////////////////////////////////////////
 // This is where the input we've taken from the game gets turned into useful data //
 ////////////////////////////////////////////////////////////////////////////////////
@@ -689,7 +757,7 @@ bool IsNMBBStanding() {
     constexpr Color PANTS_COLOR = { 0, 28, 120 };
     constexpr POINT SAMPLE_POS = { 1024, 774 };
     constexpr double THRESHOLD = 0.98;
-    return (PANTS_COLOR.Similarity(GetPixelColor(SAMPLE_POS)) > THRESHOLD);
+    return (PANTS_COLOR.Similarity(SCREEN_DATA.LockShared().GetPixelColor(SAMPLE_POS)) > THRESHOLD);
 }
 
 // Input should be top-left corner of the number followed by the size
@@ -710,13 +778,16 @@ int ReadNumber(int x, int y) {
     constexpr uint8_t threshold = 100; // Minimum brightness value of the pixel
 
     int guessBitflags = 0;
-    for (int sample = 0; sample < 9; ++sample) {
-        POINT samplePos {
-            x + sampleOffsets[sample].x,
-            y + sampleOffsets[sample].y
-        };
-        if (GetPixelColor(samplePos).Gray() > threshold) {
-            guessBitflags |= 1 << sample;
+    {
+        ScreenData screen = SCREEN_DATA.LockShared();
+        for (int sample = 0; sample < 9; ++sample) {
+            POINT samplePos {
+                x + sampleOffsets[sample].x,
+                y + sampleOffsets[sample].y
+            };
+            if (screen.GetPixelColor(samplePos).Gray() > threshold) {
+                guessBitflags |= 1 << sample;
+            }
         }
     }
 
@@ -759,11 +830,13 @@ bool ReadGameClock() {
 }
 
 bool DoesVentilationNeedReset() {
-    return GetPixelColor(
-        GAME_STATE.GetState() == State::Office
-            ? pnt::ofc::VENT_WARNING_POS
-            : pnt::cam::VENT_WARNING_POS
-    ).RedDev() > 35;
+    return SCREEN_DATA
+        .LockShared()
+        .GetPixelColor(
+            GAME_STATE.GetState() == State::Office
+                ? pnt::ofc::VENT_WARNING_POS
+                : pnt::cam::VENT_WARNING_POS
+        ).RedDev() > 35;
 }
 
 void GenerateSamplePoints(POINT arr[5], POINT start, long scale) {
@@ -786,8 +859,9 @@ int TestSamples(POINT center, CNorm compare, double threshold) {
     GenerateSamplePoints(samplePoint, center, 4);
 
     int matchCount = 0;
+    ScreenData screen = SCREEN_DATA.LockShared();
     for (int i = 0; i < 5; ++i) {
-        CNorm sample = GetPixelColor(samplePoint[i]).Normalized();
+        CNorm sample = screen.GetPixelColor(samplePoint[i]).Normalized();
         if (sample.VNormalized().CDot(compare) > threshold) ++matchCount;
     }
     return matchCount;
@@ -806,8 +880,9 @@ int TestSamples(POINT center, uint8_t compare, uint8_t maxDifference) {
     GenerateSamplePoints(samplePoint, center, 4);
 
     int matchCount = 0;
+    ScreenData screen = SCREEN_DATA.LockShared();
     for (int i = 0; i < 5; ++i) {
-        uint8_t sample = GetPixelColor(samplePoint[i]).Gray();
+        uint8_t sample = screen.GetPixelColor(samplePoint[i]).Gray();
         if (abs(sample - compare) > maxDifference) ++matchCount;
     }
     return matchCount;
@@ -825,8 +900,9 @@ void LocateOfficeLamp() {
     constexpr int threshold = 200;
     constexpr int start = 723;
     constexpr int width = 585;
+    ScreenData screen = SCREEN_DATA.LockShared();
     for (int x = start; x < start + width; ++x) {
-        if (GetPixelColor(x, y).Gray() > threshold) {
+        if (screen.GetPixelColor(x, y).Gray() > threshold) {
             // 100% of the samples must be 80% matching. Flickering be damned.
             if (TestSamples({ x,y }, 255, 20) == 5) {
                 OfficeData* od = GAME_STATE.GetOfficeData();
@@ -1116,7 +1192,7 @@ namespace action {
 
     void HandleNMBB() {
         Sleep(17); // Wait a little bit to make sure we have time for the screen to change
-        UpdateScreencap();
+        SCREEN_DATA.UpdateScreencap();
         if (IsNMBBStanding()) { // Double check--NMBB will kill us if we flash him wrongfully
             // If he is in fact still up, flash the light on him to put him back down
             SimulateKeypress(VirtualKey::Flashlight);
@@ -1216,7 +1292,7 @@ std::atomic<bool> THREADS_SHOULD_LOOP = true;
 
 void Produce() {
     while (THREADS_SHOULD_LOOP.load()) {
-        UpdateScreencap(); // Update our internal copy of what the gamescreen looks like so we can sample its pixels
+        SCREEN_DATA.UpdateScreencap(); // Update our internal copy of what the gamescreen looks like so we can sample its pixels
         Sleep(2);
     }
 }
@@ -1224,27 +1300,34 @@ void Produce() {
 void Consume() {
     while (THREADS_SHOULD_LOOP.load()) {
         RefreshGameData(); // Using the screencap we just generated, update the game data statuses for decision making
-        GAME_STATE.DisplayData(); // Output the data for the user to view
+        if (!GAME_STATE.gameData.time.IsDefault()) {
+            GAME_STATE.DisplayData(); // Output the data for the user to view
+        } else {
+            std::cout << RESET_CURSOR << "Waiting for clock to be visible...";
+        }
         ActOnGameData(); // Based upon the game data, perform all actions necessary to return the game to a neutral state
         Sleep(4);
     }
 }
 
 void CreateHelpers() {
-    UpdateScreencap(); // first time screen update
+    SCREEN_DATA.UpdateScreencap(); // first time screen update
     THREADS_SHOULD_LOOP.store(true);
     std::thread producer(Produce); // Spawn a thread for reading the screen pixels
     std::thread consumer(Consume); // Spawn a thread for acting on that data
 
+    // !! SAFETY !!
     // Make sure that user control override doesn't disable the user from closing the program
     while (true) {
-        /// !! SAFETY !!
         Sleep(2); // Give the user time to move the mouse
 
-        POINT p = GetMousePos();
-
-        // If the mouse is touching any edge (easy to flick your mouse to those positions)
-        if (p.x <= 0 || p.y <= 0 || p.x >= SCREEN_WIDTH || p.y >= SCREEN_HEIGHT) {
+        bool shouldYeildControl = GetKeyState((int)VirtualKey::Esc); // Escape can't be toggled so we can ignore that bit
+        if (!shouldYeildControl) {
+            POINT p = GetMousePos();
+            // If the mouse is touching any edge (easy to flick your mouse to those positions)
+            shouldYeildControl = p.x <= 0 || p.y <= 0 || p.x >= SCREEN_WIDTH || p.y >= SCREEN_HEIGHT;
+        }
+        if (shouldYeildControl) {
             std::cout << "User has chosen to reclaim control. Task ended.\n";
             THREADS_SHOULD_LOOP.store(false); // This tells the worker threads to break
             break;
@@ -1277,7 +1360,7 @@ int main() {
     SCREEN_HEIGHT = GetSystemMetrics(SM_CYVIRTUALSCREEN);
     SCREEN_WIDTH = GetSystemMetrics(SM_CXVIRTUALSCREEN);
 
-    SCREEN_DATA = new BYTE[CHANNELS_PER_COLOR * (size_t)SCREEN_WIDTH * (size_t)SCREEN_HEIGHT];
+    SCREEN_DATA.ResizeBuffer(CHANNELS_PER_COLOR * (size_t)SCREEN_WIDTH * (size_t)SCREEN_HEIGHT);
 
     DESKTOP_HDC = GetDC(NULL); // get the desktop device context
     INTERNAL_HDC = CreateCompatibleDC(DESKTOP_HDC); // create a device context to use ourselves
@@ -1288,33 +1371,7 @@ int main() {
 
     // GAME LOOP //
 
-    // TODO: multithread
-    while (true) {
-        /// !! SAFETY !!
-        Sleep(2); // Give the user time to move the mouse
-
-        POINT p = GetMousePos();
-
-        // If the mouse is touching any edge (easy to flick your mouse to those positions)
-        if (p.x <= 0 || p.y <= 0 || p.x >= SCREEN_WIDTH || p.y >= SCREEN_HEIGHT) {
-            std::cout << "User has chosen to reclaim control. Task ended.\n";
-            break;
-        }
-
-        UpdateScreencap(); // Update our internal copy of what the gamescreen looks like so we can sample its pixels
-
-        RefreshGameData(); // Using the screencap we just generated, update the game data statuses for decision making
-
-        if (!GAME_STATE.gameData.time.IsDefault()) {
-            GAME_STATE.DisplayData(); // Output the data for the user to view
-        } else {
-            std::cout << "Waiting for clock to be visible...";
-        }
-        //BitBlt(g_hConsoleDC, 0, 0, g_screenWidth, g_screenHeight, g_hInternal, 0, 0, SRCCOPY);
-
-        ActOnGameData(); // Based upon the game data, perform all actions necessary to return the game to a neutral state
-        std::cout << RESET_CURSOR;
-    }
+    CreateHelpers();
 
     // WRAP UP //
 
@@ -1324,7 +1381,7 @@ int main() {
 
     ReleaseDC(NULL, DESKTOP_HDC); // Free the desktop handle
 
-    delete[] SCREEN_DATA;
+    SCREEN_DATA.ResizeBuffer(0);
 
     return 0;
 }
