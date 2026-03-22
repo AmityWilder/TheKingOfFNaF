@@ -14,7 +14,7 @@ use windows::Win32::{
     },
     UI::{
         Input::KeyboardAndMouse::{
-            GetKeyState, INPUT, INPUT_KEYBOARD, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
+            GetAsyncKeyState, INPUT, INPUT_KEYBOARD, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
             MOUSEEVENTF_LEFTUP, SendInput,
         },
         WindowsAndMessaging::{
@@ -310,5 +310,5 @@ pub fn simulate_mouse_click_at(p: POINT) {
 }
 
 pub fn is_key_down(key: VirtualKey) -> bool {
-    (unsafe { GetKeyState(key as i32) } & !1) != 0
+    (unsafe { GetAsyncKeyState(key as i32) } & !1) != 0
 }

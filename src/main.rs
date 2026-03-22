@@ -618,7 +618,6 @@ impl GameState {
         ucn_numbers: &rl::Texture2D,
         font_size: i32,
         color: rl::Color,
-        warn_color: rl::Color,
         err_color: rl::Color,
     ) {
         use raylib::prelude::*;
@@ -631,10 +630,7 @@ impl GameState {
         let mut y1 = y;
         let mut x = d.measure_text(time_str, font_size) + font_size;
         if self.game.time.error.iter().any(|e| e.is_some()) {
-            const WARN_STR: &str = "out of date: ";
-            d.draw_text(WARN_STR, x, y, font_size, warn_color);
-            x += d.measure_text(WARN_STR, font_size);
-            const ERR_STR: &str = "unrecognized combination of pixels: ";
+            const ERR_STR: &str = "error: unrecognized digit(s)";
             d.draw_text(ERR_STR, x, y, font_size, err_color);
             x += d.measure_text(ERR_STR, font_size);
         }
@@ -643,22 +639,7 @@ impl GameState {
             const DIGIT_WIDTH: i32 = 11 + 1;
             const DIGIT_HEIGHT: i32 = 14 + 1;
             match e {
-                ReadNumberError::UnknownSequence { flags, /*full*/ } => {
-                    // for (i, val) in full.iter().copied().enumerate() {
-                    //     let i = i as i32;
-                    //     let (row, col) = (i / 11, i % 11);
-                    //     d.draw_rectangle(
-                    //         x + SCALE * col,
-                    //         y1 + SCALE * row,
-                    //         SCALE,
-                    //         SCALE,
-                    //         if val {
-                    //             Color::GRAY
-                    //         } else {
-                    //             Color::new(31, 31, 31, 255)
-                    //         },
-                    //     );
-                    // }
+                ReadNumberError::UnknownSequence { flags } => {
                     d.draw_texture_ex(
                         ucn_numbers,
                         rvec2(x + DIGIT_WIDTH * SCALE, y1),
@@ -980,9 +961,7 @@ fn is_nmbb_standing(screen_data: &ScreenData) -> bool {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ReadNumberError {
-    UnknownSequence {
-        flags: u8, /* full: [bool; 11 * 14] */
-    },
+    UnknownSequence { flags: u8 },
 }
 
 impl std::fmt::Display for ReadNumberError {
@@ -999,11 +978,11 @@ impl std::error::Error for ReadNumberError {}
 
 const READ_NUMBER_SAMPLE_OFFSETS: [POINT; 8] = [
     POINT { x: 5, y: 0 },  // top middle
-    POINT { x: 0, y: 7 },  // "top" left
-    POINT { x: 10, y: 7 }, // "top" right
-    POINT { x: 5, y: 8 },  // middle middle
-    POINT { x: 0, y: 8 },  // middle left
-    POINT { x: 10, y: 8 }, // middle right
+    POINT { x: 0, y: 7 },  // upper-middle left
+    POINT { x: 10, y: 7 }, // upper-middle right
+    POINT { x: 5, y: 8 },  // lower-middle middle
+    POINT { x: 0, y: 8 },  // lower-middle left
+    POINT { x: 10, y: 8 }, // lower-middle right
     POINT { x: 0, y: 12 }, // bottom left
     POINT { x: 5, y: 12 }, // bottom middle
 ];
@@ -1035,16 +1014,6 @@ impl ScreenData {
             .map(|pos| pos as u8)
             .ok_or(ReadNumberError::UnknownSequence {
                 flags: guess_bitflags,
-                // full: std::array::from_fn(|i| {
-                //     let i = i as i32;
-                //     let (row, col) = (i / 11, i % 11);
-                //     self.pixel_color_at(POINT {
-                //         x: x + col,
-                //         y: y + row,
-                //     })
-                //     .gray()
-                //         > THRESHOLD
-                // }),
             })
     }
 
@@ -1168,30 +1137,47 @@ impl OfficeData {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UpdateStateError {
+    NoMatchingCameraInCameraState,
+}
+
+impl std::fmt::Display for UpdateStateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UpdateStateError::NoMatchingCameraInCameraState => {
+                write!(f, "camera state identified, but no active camera found")
+            }
+        }
+    }
+}
+
+impl std::error::Error for UpdateStateError {}
+
 impl GameState {
-    pub fn update_state(&mut self, screen_data: &ScreenData) {
+    pub fn update_state(&mut self, screen_data: &ScreenData) -> Result<(), UpdateStateError> {
         const THRESHOLD: f64 = 0.99;
         let mut new_state = State::Office;
         // List of how many samples returned as matches for each of the buttons being tested
-        let states_to_test = [State::Camera, State::Vent, State::Duct].map(|sys_btn| {
-            screen_data.test_samples(
-                Button::from(sys_btn).pos(),
-                *clr::SYS_BTN_COLOR_NRM,
-                THRESHOLD,
-            )
-        });
-        let index_of_max =
-            max_in_array(states_to_test).expect("states_to_test has a non-zero number of elements");
-        // We must have over 50% of the samples returning as matches
-        if states_to_test[index_of_max] == 5 {
-            new_state = match index_of_max {
-                0 => State::Camera,
-                1 => State::Vent,
-                2 => State::Duct,
-                3 => State::Office,
-                _ => todo!(),
-            }
+        if let Some((tested_state, _)) = [State::Camera, State::Vent, State::Duct]
+            .into_iter()
+            .map(|sys_btn| {
+                (
+                    sys_btn,
+                    screen_data.test_samples(
+                        Button::from(sys_btn).pos(),
+                        *clr::SYS_BTN_COLOR_NRM,
+                        THRESHOLD,
+                    ),
+                )
+            })
+            .max_by_key(|(_, x)| *x)
+            // We must have every sample returning as a match to avoid false positives
+            .filter(|(_, matching_samples)| *matching_samples >= 5)
+        {
+            new_state = tested_state;
         }
+
         // Update the global state
         self.state = match new_state {
             State::Office => StateData::Office(OfficeData { office_yaw: 0.0 }),
@@ -1207,19 +1193,27 @@ impl GameState {
                     Camera::PrizeCounter,
                     Camera::PartsAndServices,
                 ];
-                let cams_to_test: [i32; CAMERAS.len()] = CAMERAS.map(|camera| {
-                    screen_data.test_samples(
-                        Button::from(camera).pos(),
-                        *clr::CAM_BTN_COLOR_NRM,
-                        THRESHOLD,
-                    )
-                });
-                // If we've confirmed the state then there's no doubt we can identify the camera
-                StateData::Camera(CameraData {
-                    camera: CAMERAS[max_in_array(cams_to_test)
-                        .expect("cams_to_test has a non-zero number of elements")
-                        as usize],
-                })
+                // If we've confirmed the state then there should be no doubt we can identify the camera
+                if let Some((camera, _)) = CAMERAS
+                    .into_iter()
+                    .map(|camera| {
+                        (
+                            camera,
+                            screen_data.test_samples(
+                                Button::from(camera).pos(),
+                                *clr::CAM_BTN_COLOR_NRM,
+                                THRESHOLD,
+                            ),
+                        )
+                    })
+                    .max_by_key(|(_, x)| *x)
+                    // We must have every sample returning as a match to avoid false positives
+                    .filter(|(_, matching_samples)| *matching_samples >= 5)
+                {
+                    StateData::Camera(CameraData { camera })
+                } else {
+                    return Err(UpdateStateError::NoMatchingCameraInCameraState);
+                }
             }
 
             State::Vent => StateData::Vent(VentData {
@@ -1230,7 +1224,8 @@ impl GameState {
                 closed_duct: Duct::West,
                 audio_lure: POINT::default(),
             }),
-        }
+        };
+        Ok(())
     }
 
     /// Assumes we are already in the office
@@ -1260,8 +1255,11 @@ impl GameState {
     ///////////////////////////////////////////////////////////////////////////
 
     /// Updates all known game information
-    pub fn refresh_game_data(&mut self, screen_data: &RwLock<ScreenData>) {
-        self.update_state(&screen_data.read());
+    pub fn refresh_game_data(
+        &mut self,
+        screen_data: &RwLock<ScreenData>,
+    ) -> Result<(), UpdateStateError> {
+        self.update_state(&screen_data.read())?;
 
         match screen_data.read().read_game_clock() {
             Ok(time) => {
@@ -1276,18 +1274,27 @@ impl GameState {
         }
 
         //self.locate_office_lamp(); // Needs work
+
+        Ok(())
     }
 
-    pub fn toggle_monitor(&mut self, screen_data: &RwLock<ScreenData>) {
+    pub fn toggle_monitor(
+        &mut self,
+        screen_data: &RwLock<ScreenData>,
+    ) -> Result<(), UpdateStateError> {
         simulate_keypress(VirtualKey::CameraToggle);
         sleep(Duration::from_millis(CAM_RESP_MS as u64));
-        self.update_state(&screen_data.read());
+        self.update_state(&screen_data.read())
     }
 
-    pub fn open_monitor_if_closed(&mut self, screen_data: &RwLock<ScreenData>) {
+    pub fn open_monitor_if_closed(
+        &mut self,
+        screen_data: &RwLock<ScreenData>,
+    ) -> Result<(), UpdateStateError> {
         if self.state() == State::Office {
-            self.toggle_monitor(screen_data);
+            self.toggle_monitor(screen_data)?;
         }
+        Ok(())
     }
 
     // `cam` only used if `state == State::Camera`
@@ -1296,11 +1303,11 @@ impl GameState {
         new_state: State,
         cam: Camera,
         screen_data: &RwLock<ScreenData>,
-    ) {
+    ) -> Result<(), UpdateStateError> {
         let current_state = self.state();
         if current_state != new_state {
             if (current_state == State::Office) != (new_state == State::Office) {
-                self.toggle_monitor(screen_data);
+                self.toggle_monitor(screen_data)?;
             }
             match new_state {
                 State::Office => {}
@@ -1318,26 +1325,35 @@ impl GameState {
             }
             sleep(Duration::from_millis(1));
         }
+        Ok(())
     }
 
     //
     // Playbook of actions
     //
 
-    pub fn handle_funtime_foxy(&mut self, screen_data: &RwLock<ScreenData>) {
-        self.open_monitor_if_closed(screen_data);
+    pub fn handle_funtime_foxy(
+        &mut self,
+        screen_data: &RwLock<ScreenData>,
+    ) -> Result<(), UpdateStateError> {
+        self.open_monitor_if_closed(screen_data)?;
         if self.state() != State::Camera {
             simulate_mouse_click_at(Button::from(State::Camera).pos());
         }
         sleep(Duration::from_millis(1));
         simulate_mouse_click_at(Button::Cam06.pos());
+        Ok(())
     }
 
-    pub fn reset_vents(&mut self, screen_data: &RwLock<ScreenData>) {
-        self.open_monitor_if_closed(screen_data); // We don't need to care which system, only that the monitor is up.
+    pub fn reset_vents(
+        &mut self,
+        screen_data: &RwLock<ScreenData>,
+    ) -> Result<(), UpdateStateError> {
+        self.open_monitor_if_closed(screen_data)?; // We don't need to care which system, only that the monitor is up.
         simulate_mouse_click_at(Button::ResetVent.pos());
         self.game.mark_ventilation_has_been_reset();
         sleep(Duration::from_millis(10));
+        Ok(())
     }
 
     pub fn handle_nmbb(&self, screen_data: &RwLock<ScreenData>) {
@@ -1350,7 +1366,10 @@ impl GameState {
         }
     }
 
-    pub fn act_on_game_data(&mut self, screen_data: &RwLock<ScreenData>) {
+    pub fn act_on_game_data(
+        &mut self,
+        screen_data: &RwLock<ScreenData>,
+    ) -> Result<(), UpdateStateError> {
         /**************************************************************************************************
          * Definitions
          * ===========
@@ -1384,18 +1403,20 @@ impl GameState {
         }
 
         if self.game.is_ventilation_reset_needed() {
-            self.reset_vents(screen_data);
+            self.reset_vents(screen_data)?;
         }
 
         // We have <= 1 seconds before the next hour
         if (DECISECS_PER_HOUR - self.game.time.deciseconds_since_hour())
             <= (DECISECS_PER_SEC as u16 + (CAM_RESP_MS / MS_PER_DECISEC as u16))
         {
-            self.handle_funtime_foxy(screen_data);
+            self.handle_funtime_foxy(screen_data)?;
             sleep(Duration::from_millis(10));
         }
 
         // Lowest priority actions should go down here //
+
+        Ok(())
     }
 }
 
@@ -1451,7 +1472,7 @@ fn main() {
                 // All the information we have about the state of the game
                 let mut game_state = GameState::new();
                 let (mut rl, thread) = init()
-                    .size(1280, 720)
+                    .size(740, 260)
                     .title("TheKingOfFNaF")
                     .resizable()
                     .build();
@@ -1482,6 +1503,7 @@ fn main() {
                 while threads_should_loop.load(Relaxed) {
                     if rl.window_should_close() {
                         threads_should_loop.store(false, Relaxed);
+                        println!("User has chosen to reclaim control. Task ended.");
                         break;
                     }
 
@@ -1492,7 +1514,9 @@ fn main() {
                     if !is_paused {
                         // Using the screencap generated on the screen_data thread,
                         // update the game state data for decision making
-                        game_state.refresh_game_data(&screen_data);
+                        if let Err(e) = game_state.refresh_game_data(&screen_data) {
+                            eprintln!("failed to update game state: {e}");
+                        }
                     }
 
                     // Output the data for the user to view
@@ -1506,13 +1530,14 @@ fn main() {
                         &ucn_numbers,
                         10,
                         Color::WHITE,
-                        Color::GOLD,
                         Color::RED,
                     );
 
                     if !is_paused {
                         // Based upon the game data, perform all actions necessary to return the game to a neutral state
-                        game_state.act_on_game_data(&screen_data);
+                        if let Err(e) = game_state.act_on_game_data(&screen_data) {
+                            eprintln!("failed to update game state: {e}");
+                        }
                     }
 
                     // sleep(Duration::from_millis(4)); // Already done by raylib's EndDrawing()
