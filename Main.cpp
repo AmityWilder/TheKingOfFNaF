@@ -263,10 +263,6 @@ public:
     constexpr int GetPingsSinceChange() const {
         return pingsSinceChange;
     }
-
-    constexpr bool IsDefault() const {
-        return deciseconds == 0;
-    }
 };
 
 namespace std {
@@ -536,11 +532,6 @@ public:
 // Global variables -- used by everyone, but changeable.
 //
 
-// Get a console handle
-HWND WND_CONSOLE;
-// Get a handle to device hdc
-HDC CONSOLE_HDC;
-
 int SCREEN_HEIGHT;
 int SCREEN_WIDTH;
 
@@ -606,12 +597,6 @@ public:
             data[index + 1], // Green
             data[index],     // Blue
         };
-
-    #ifdef _DEBUG
-        // If the function is working correctly, you shouldn't see anything change.
-        // If there's something wrong, the pixel being misread will be overwritten with the color being read.
-        SetPixel(CONSOLE_HDC, (int)x, (int)y, output);
-    #endif
 
         return output;
     }
@@ -819,6 +804,7 @@ int ReadNumber(int x, int y) {
     }
 
     switch (guessBitflags) {
+        default: // 0 on Error
         case 0b110101101: return 0;
         case 0b000100011: return 1;
         case 0b001110011: return 2;
@@ -829,7 +815,6 @@ int ReadNumber(int x, int y) {
         case 0b000000011: return 7;
         case 0b000101101: return 8;
         case 0b100100001: return 9;
-        default: return -1; // Error
     }
 }
 
@@ -1315,52 +1300,6 @@ void GameState::DisplayData() const {
     std::cout << '\n';
 }
 
-std::atomic<bool> THREADS_SHOULD_LOOP;
-
-void Produce() {
-    while (THREADS_SHOULD_LOOP.load()) {
-        SCREEN_DATA.UpdateScreencap(); // Update our internal copy of what the gamescreen looks like so we can sample its pixels
-        Sleep(2);
-    }
-}
-
-void Consume() {
-    while (THREADS_SHOULD_LOOP.load()) {
-        RefreshGameData(); // Using the screencap we just generated, update the game data statuses for decision making
-        if (!GAME_STATE.gameData.time.IsDefault()) {
-            GAME_STATE.DisplayData(); // Output the data for the user to view
-        } else {
-            std::cout << RESET_CURSOR << "Waiting for clock to be visible...";
-        }
-        ActOnGameData(); // Based upon the game data, perform all actions necessary to return the game to a neutral state
-        Sleep(4);
-    }
-}
-
-void CreateHelpers() {
-    SCREEN_DATA.UpdateScreencap(); // first time screen update
-    THREADS_SHOULD_LOOP.store(true);
-    std::thread producer(Produce); // Spawn a thread for reading the screen pixels
-    std::thread consumer(Consume); // Spawn a thread for acting on that data
-
-    // !! SAFETY !!
-    // Make sure that user control override doesn't disable the user from closing the program
-    while (THREADS_SHOULD_LOOP.load()) {
-        Sleep(2); // Give the user time to provide input
-        if (GetKeyState((int)VirtualKey::Esc) & ~1) { // mask to ignore the "toggled" bit
-            std::cout.clear();
-            std::cout << "\nUser has chosen to reclaim control. Task ended.\n";
-            THREADS_SHOULD_LOOP.store(false); // This tells the worker threads to stop
-        }
-    }
-
-    std::cout << "Waiting on worker threads...\n";
-    // Wait for threads to safely finish their respective functions before destructing them
-    producer.join();
-    consumer.join();
-    std::cout << "Worker threads joined.\n";
-}
-
 void SimulateKeyDown(VirtualKey key) {
     INPUT input = KeyInput(key, false);
     SendInput(1, &input, sizeof(INPUT));
@@ -1373,11 +1312,10 @@ void SimulateKeyUp(VirtualKey key) {
     Sleep(2);
 }
 
+std::atomic<bool> THREADS_SHOULD_LOOP;
+
 int main() {
     // SETUP //
-
-    WND_CONSOLE = GetConsoleWindow(); // Get a console handle
-    CONSOLE_HDC = GetDC(WND_CONSOLE); // Get a handle to device hdc
 
     SCREEN_HEIGHT = GetSystemMetrics(SM_CYVIRTUALSCREEN);
     SCREEN_WIDTH = GetSystemMetrics(SM_CXVIRTUALSCREEN);
@@ -1393,7 +1331,45 @@ int main() {
 
     // GAME LOOP //
 
-    CreateHelpers();
+    SCREEN_DATA.UpdateScreencap(); // first time screen update
+    THREADS_SHOULD_LOOP.store(true);
+
+    // Spawn a thread for reading the screen pixels
+    std::thread producer(+[]() {
+        while (THREADS_SHOULD_LOOP.load()) {
+            SCREEN_DATA.UpdateScreencap(); // Update our internal copy of what the gamescreen looks like so we can sample its pixels
+            Sleep(2);
+        }
+    });
+
+    // Spawn a thread for acting on that data
+    std::thread consumer(+[]() {
+        while (THREADS_SHOULD_LOOP.load()) {
+            RefreshGameData(); // Using the screencap we just generated, update the game data statuses for decision making
+            GAME_STATE.DisplayData(); // Output the data for the user to view
+            ActOnGameData(); // Based upon the game data, perform all actions necessary to return the game to a neutral state
+            Sleep(4);
+        }
+    });
+
+    // !! SAFETY !!
+    // Make sure that user control override doesn't disable the user from closing the program
+    while (THREADS_SHOULD_LOOP.load()) {
+        Sleep(2); // Give the user time to provide input
+
+        if (GetKeyState((int)VirtualKey::Esc) & ~1) { // mask to ignore the "toggled" bit
+            std::cout.clear();
+            std::cout << "\nUser has chosen to reclaim control. Task ended.\n";
+            THREADS_SHOULD_LOOP.store(false); // This tells the worker threads to stop
+            break;
+        }
+    }
+
+    std::cout << "Waiting on worker threads...\n";
+    // Wait for threads to safely finish their respective functions before destructing them
+    producer.join();
+    consumer.join();
+    std::cout << "Worker threads joined.\n";
 
     // WRAP UP //
 
