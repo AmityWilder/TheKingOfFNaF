@@ -1,10 +1,16 @@
 //! windows.h is ew yucky, i dont want it touching the main program
+
+#![warn(
+    clippy::undocumented_unsafe_blocks,
+    reason = "do not create soundness holes in communicating with the OS"
+)] // TODO: change this to deny once windows.h safety has been cleared up
+
 use std::{mem::size_of, thread::sleep, time::Duration};
-pub use windows::Win32::Foundation::POINT;
 use windows::Win32::{
     Graphics::Gdi::{
-        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC,
-        DeleteObject, GetDC, HBITMAP, HDC, HGDIOBJ, RGBQUAD, ReleaseDC, SelectObject,
+        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
+        DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, HBITMAP, HDC, HGDIOBJ, RGBQUAD,
+        ReleaseDC, SRCCOPY, SelectObject,
     },
     UI::{
         Input::KeyboardAndMouse::{
@@ -16,6 +22,7 @@ use windows::Win32::{
         },
     },
 };
+pub use windows::{Win32::Foundation::POINT, core::Result as WindowsResult};
 
 #[derive(Debug)]
 pub struct WindowsHandles {
@@ -25,6 +32,9 @@ pub struct WindowsHandles {
     pub internal_hdc: HDC,
     /// create a bitmap
     pub bitmap: HBITMAP,
+
+    pub screen_width: i32,
+    pub screen_height: i32,
 }
 
 impl Drop for WindowsHandles {
@@ -40,9 +50,7 @@ impl Drop for WindowsHandles {
 impl WindowsHandles {
     pub fn new() -> Self {
         let screen_width = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
-        super::SCREEN_WIDTH.set(screen_width).unwrap();
         let screen_height = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
-        super::SCREEN_HEIGHT.set(screen_height).unwrap();
 
         let desktop_hdc = unsafe { GetDC(None) }; // get the desktop device context
         let internal_hdc = unsafe { CreateCompatibleDC(Some(desktop_hdc)) }; // create a device context to use ourselves
@@ -57,7 +65,36 @@ impl WindowsHandles {
             desktop_hdc,
             internal_hdc,
             bitmap,
+            screen_width,
+            screen_height,
         }
+    }
+
+    pub fn bitblt(&self, buffer: &mut [u8]) -> WindowsResult<()> {
+        unsafe {
+            BitBlt(
+                self.internal_hdc,
+                0,
+                0,
+                self.screen_width,
+                self.screen_height,
+                Some(self.desktop_hdc),
+                0,
+                0,
+                SRCCOPY,
+            )?;
+
+            GetDIBits(
+                self.desktop_hdc,
+                self.bitmap,
+                0,
+                self.screen_height as u32,
+                Some(buffer.as_mut_ptr().cast()),
+                &mut bitmap_info(self.screen_width, self.screen_height),
+                DIB_RGB_COLORS,
+            );
+        }
+        Ok(())
     }
 }
 
