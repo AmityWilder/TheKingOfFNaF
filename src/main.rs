@@ -1,11 +1,10 @@
-//
-// Global constants -- These give context to unchanging values
-//
-#![allow(dead_code)]
+#![deny(clippy::missing_safety_doc)]
+#![warn(clippy::undocumented_unsafe_blocks)] // TODO: change this to deny once windows.h safety has been cleared up
+
 mod win;
 use std::{
     sync::{
-        Arc, OnceLock, RwLock,
+        Condvar, OnceLock, RwLock,
         atomic::{AtomicBool, Ordering::Relaxed},
     },
     {thread::sleep, time::Duration},
@@ -13,104 +12,12 @@ use std::{
 
 use win::*;
 
+//
+// Global constants -- These give context to unchanging values
+//
+
 const CLEAR_CONSOLE: &str = "\x1b[2J";
 const RESET_CURSOR: &str = "\x1b[0;0H";
-
-/// Important positions on the screen
-mod pnt {
-    use super::*;
-
-    /// Clock position
-    pub const CLK_POS: POINT = POINT { x: 1807, y: 85 };
-    pub const CLK_10SEC_X: i32 = 1832;
-    pub const CLK_SEC_X: i32 = 1849;
-    pub const CLK_DECISEC_X: i32 = 1873;
-
-    pub const TEMPERATURE_POS: POINT = POINT { x: 1818, y: 1012 };
-
-    pub const COINS: POINT = POINT { x: 155, y: 75 };
-
-    pub const PWR_POS: POINT = POINT { x: 71, y: 910 };
-    pub const PWR_USG_POS: POINT = POINT { x: 38, y: 969 };
-
-    pub const NOISE_POS: POINT = POINT { x: 38, y: 1020 };
-
-    /// Not really needed since the S key exists...
-    pub const OPEN_CAM_POS: POINT = POINT { x: 1280, y: 1006 };
-
-    /// Office
-    pub mod ofc {
-        use super::*;
-
-        pub const MASK_POS: POINT = POINT { x: 682, y: 1006 };
-        /// The office version of this constant
-        pub const VENT_WARNING_POS: POINT = POINT { x: 1580, y: 1040 };
-
-        pub const FOXY: POINT = POINT { x: 801, y: 710 };
-    }
-
-    /// Camera
-    pub mod cam {
-        use super::*;
-
-        /// Location for testing vent warning in the cameras
-        pub const VENT_WARNING_POS: POINT = POINT { x: 1563, y: 892 };
-        /// Where the reset vent button is for clicking
-        pub const RESET_VENT_BTN_POS: POINT = POINT { x: 1700, y: 915 };
-
-        /// WestHall
-        pub const CAM_01_POS: POINT = POINT { x: 1133, y: 903 };
-        /// EastHall
-        pub const CAM_02_POS: POINT = POINT { x: 1382, y: 903 };
-        /// Closet
-        pub const CAM_03_POS: POINT = POINT { x: 1067, y: 825 };
-        /// Kitchen
-        pub const CAM_04_POS: POINT = POINT { x: 1491, y: 765 };
-        /// PirateCove
-        pub const CAM_05_POS: POINT = POINT { x: 1122, y: 670 };
-        /// ShowtimeStage
-        pub const CAM_06_POS: POINT = POINT { x: 1422, y: 590 };
-        /// PrizeCounter
-        pub const CAM_07_POS: POINT = POINT { x: 1278, y: 503 };
-        /// PartsAndServices
-        pub const CAM_08_POS: POINT = POINT { x: 988, y: 495 };
-
-        /// System buttons X position
-        pub const SYS_BTN_X: i32 = 1331;
-        /// Cam system button Y position
-        pub const CAM_SYS_BTN_Y: i32 = 153;
-        /// Vent system button Y position
-        pub const VENT_SYS_BTN_Y: i32 = 263;
-        /// Duct system button Y position
-        pub const DUCT_SYS_BTN_Y: i32 = 373;
-    }
-
-    /// Vents
-    pub mod vnt {
-        use super::*;
-
-        /// Left snare
-        pub const SNARE_L_POS: POINT = POINT { x: 548, y: 645 };
-        /// Top snare
-        pub const SNARE_T_POS: POINT = POINT { x: 650, y: 536 };
-        /// Right snare
-        pub const SNARE_R_POS: POINT = POINT { x: 747, y: 645 };
-    }
-
-    /// Ducts
-    pub mod dct {
-        use super::*;
-
-        /// Check left duct
-        pub const DUCT_L_POS: POINT = POINT { x: 500, y: 791 };
-        /// Check right duct
-        pub const DUCT_R_POS: POINT = POINT { x: 777, y: 791 };
-        /// Left duct button
-        pub const DUCT_L_BTN_POS: POINT = POINT { x: 331, y: 844 };
-        /// Right duct button
-        pub const DUCT_R_BTN_POS: POINT = POINT { x: 1016, y: 844 };
-    }
-}
 
 /// Time it takes for the camera to be ready for input
 pub const CAM_RESP_MS: u16 = 300;
@@ -480,10 +387,51 @@ struct OfficeData {
     pub office_yaw: f64,
 }
 
+impl OfficeData {
+    pub const MASK_POS: POINT = POINT { x: 682, y: 1006 };
+    /// The office version of this constant
+    pub const VENT_WARNING_POS: POINT = POINT { x: 1580, y: 1040 };
+
+    pub const FOXY: POINT = POINT { x: 801, y: 710 };
+}
+
 #[derive(Debug)]
-struct CamData {
+struct CameraData {
     /// Which camera we are looking at
     pub camera: Camera,
+}
+
+impl CameraData {
+    /// Location for testing vent warning in the cameras
+    pub const VENT_WARNING_POS: POINT = POINT { x: 1563, y: 892 };
+    /// Where the reset vent button is for clicking
+    pub const RESET_VENT_BTN_POS: POINT = POINT { x: 1700, y: 915 };
+
+    /// WestHall
+    pub const CAM_01_POS: POINT = POINT { x: 1133, y: 903 };
+    /// EastHall
+    pub const CAM_02_POS: POINT = POINT { x: 1382, y: 903 };
+    /// Closet
+    pub const CAM_03_POS: POINT = POINT { x: 1067, y: 825 };
+    /// Kitchen
+    pub const CAM_04_POS: POINT = POINT { x: 1491, y: 765 };
+    /// PirateCove
+    pub const CAM_05_POS: POINT = POINT { x: 1122, y: 670 };
+    /// ShowtimeStage
+    pub const CAM_06_POS: POINT = POINT { x: 1422, y: 590 };
+    /// PrizeCounter
+    pub const CAM_07_POS: POINT = POINT { x: 1278, y: 503 };
+    /// PartsAndServices
+    pub const CAM_08_POS: POINT = POINT { x: 988, y: 495 };
+
+    /// System buttons X position
+    pub const SYS_BTN_X: i32 = 1331;
+    /// Cam system button Y position
+    pub const CAM_SYS_BTN_Y: i32 = 153;
+    /// Vent system button Y position
+    pub const VENT_SYS_BTN_Y: i32 = 263;
+    /// Duct system button Y position
+    pub const DUCT_SYS_BTN_Y: i32 = 373;
 }
 
 #[derive(Debug)]
@@ -492,11 +440,31 @@ struct VentData {
     pub vent_snare: Vent,
 }
 
+impl VentData {
+    /// Left snare
+    pub const SNARE_L_POS: POINT = POINT { x: 548, y: 645 };
+    /// Top snare
+    pub const SNARE_T_POS: POINT = POINT { x: 650, y: 536 };
+    /// Right snare
+    pub const SNARE_R_POS: POINT = POINT { x: 747, y: 645 };
+}
+
 #[derive(Debug)]
 struct DuctData {
     /// Which duct is currently closed
     pub closed_duct: Duct,
     pub audio_lure: POINT,
+}
+
+impl DuctData {
+    /// Check left duct
+    pub const DUCT_L_POS: POINT = POINT { x: 500, y: 791 };
+    /// Check right duct
+    pub const DUCT_R_POS: POINT = POINT { x: 777, y: 791 };
+    /// Left duct button
+    pub const DUCT_L_BTN_POS: POINT = POINT { x: 331, y: 844 };
+    /// Right duct button
+    pub const DUCT_R_BTN_POS: POINT = POINT { x: 1016, y: 844 };
 }
 
 /// This is the type which actually stores the data we have about the gamestate
@@ -564,13 +532,34 @@ impl GameData {
     }
 }
 
+/// Important positions on the screen
+impl GameData {
+    /// Clock position
+    pub const CLK_POS: POINT = POINT { x: 1807, y: 85 };
+    pub const CLK_10SEC_X: i32 = 1832;
+    pub const CLK_SEC_X: i32 = 1849;
+    pub const CLK_DECISEC_X: i32 = 1873;
+
+    pub const TEMPERATURE_POS: POINT = POINT { x: 1818, y: 1012 };
+
+    pub const COINS: POINT = POINT { x: 155, y: 75 };
+
+    pub const PWR_POS: POINT = POINT { x: 71, y: 910 };
+    pub const PWR_USG_POS: POINT = POINT { x: 38, y: 969 };
+
+    pub const NOISE_POS: POINT = POINT { x: 38, y: 1020 };
+
+    /// Not really needed since the S key exists...
+    pub const OPEN_CAM_POS: POINT = POINT { x: 1280, y: 1006 };
+}
+
 /// What state we are in (office, checking cameras, ducts, vents)
 /// The metadata about the state (what part of the office, which camera)
 /// Information about the current state that can tell us how to interpret information
 #[derive(Debug)]
 enum StateData {
     Office(OfficeData),
-    Camera(CamData),
+    Camera(CameraData),
     Vent(VentData),
     Duct(DuctData),
 }
@@ -600,7 +589,11 @@ impl GameState {
         }
     }
 
-    pub fn display_data(&self) {
+    pub const fn state(&self) -> State {
+        self.state.state()
+    }
+
+    pub fn display_data(&self, screen_data: &RwLock<ScreenData>) {
         println!(
             r"{RESET_CURSOR}Time: {}
 
@@ -673,7 +666,7 @@ Next Funtime Foxy show: {}
                 println!(
                     "Yaw: {}\nNightmare Balloon Boy: {}",
                     od.office_yaw,
-                    if is_nmbb_standing() {
+                    if is_nmbb_standing(&screen_data.read().unwrap()) {
                         "standing"
                     } else {
                         "sitting "
@@ -755,12 +748,6 @@ impl ScreenData {
     }
 }
 
-static SCREEN_DATA: std::sync::RwLock<ScreenData> =
-    std::sync::RwLock::new(ScreenData::new(Vec::new()));
-
-/// All the information we have about the state of the game
-static GAME_STATE: RwLock<GameState> = RwLock::new(GameState::new());
-
 /// These enable us to put the buttons in an array and choose from them instead of just using the literal names
 /// If you're trying to get the position of just the one thing and don't need to do any sort of "switch" thing, please don't use this. It adds additional steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -825,33 +812,33 @@ impl From<State> for Button {
 
 // This is the list the above enum was referring to
 const BTN_POSITIONS: [POINT; 18] = [
-    pnt::ofc::MASK_POS,
-    pnt::cam::RESET_VENT_BTN_POS,
-    pnt::cam::CAM_01_POS,
-    pnt::cam::CAM_02_POS,
-    pnt::cam::CAM_03_POS,
-    pnt::cam::CAM_04_POS,
-    pnt::cam::CAM_05_POS,
-    pnt::cam::CAM_06_POS,
-    pnt::cam::CAM_07_POS,
-    pnt::cam::CAM_08_POS,
+    OfficeData::MASK_POS,
+    CameraData::RESET_VENT_BTN_POS,
+    CameraData::CAM_01_POS,
+    CameraData::CAM_02_POS,
+    CameraData::CAM_03_POS,
+    CameraData::CAM_04_POS,
+    CameraData::CAM_05_POS,
+    CameraData::CAM_06_POS,
+    CameraData::CAM_07_POS,
+    CameraData::CAM_08_POS,
     POINT {
-        x: pnt::cam::SYS_BTN_X,
-        y: pnt::cam::CAM_SYS_BTN_Y,
+        x: CameraData::SYS_BTN_X,
+        y: CameraData::CAM_SYS_BTN_Y,
     },
     POINT {
-        x: pnt::cam::SYS_BTN_X,
-        y: pnt::cam::VENT_SYS_BTN_Y,
+        x: CameraData::SYS_BTN_X,
+        y: CameraData::VENT_SYS_BTN_Y,
     },
     POINT {
-        x: pnt::cam::SYS_BTN_X,
-        y: pnt::cam::DUCT_SYS_BTN_Y,
+        x: CameraData::SYS_BTN_X,
+        y: CameraData::DUCT_SYS_BTN_Y,
     },
-    pnt::vnt::SNARE_L_POS,
-    pnt::vnt::SNARE_T_POS,
-    pnt::vnt::SNARE_R_POS,
-    pnt::dct::DUCT_L_BTN_POS,
-    pnt::dct::DUCT_R_BTN_POS,
+    VentData::SNARE_L_POS,
+    VentData::SNARE_T_POS,
+    VentData::SNARE_R_POS,
+    DuctData::DUCT_L_BTN_POS,
+    DuctData::DUCT_R_BTN_POS,
 ];
 
 impl Button {
@@ -865,7 +852,7 @@ impl Button {
 // This is where the input we've taken from the game gets turned into useful data //
 ////////////////////////////////////////////////////////////////////////////////////
 
-fn is_nmbb_standing() -> bool {
+fn is_nmbb_standing(screen_data: &ScreenData) -> bool {
     const PANTS_COLOR: Color = Color {
         r: 0,
         g: 28,
@@ -873,77 +860,105 @@ fn is_nmbb_standing() -> bool {
     };
     const SAMPLE_POS: POINT = POINT { x: 1024, y: 774 };
     const THRESHOLD: f64 = 0.98;
-    PANTS_COLOR.similarity(SCREEN_DATA.read().unwrap().pixel_color_at(SAMPLE_POS)) > THRESHOLD
+    PANTS_COLOR.similarity(screen_data.pixel_color_at(SAMPLE_POS)) > THRESHOLD
 }
 
-/// Input should be top-left corner of the number followed by the size
-fn read_number(x: i32, y: i32) -> u8 {
-    const SAMPLE_OFFSETS: [POINT; 9] = [
-        POINT { x: 5, y: 0 },
-        POINT { x: 5, y: 8 },
-        POINT { x: 0, y: 8 },
-        POINT { x: 10, y: 8 },
-        POINT { x: 0, y: 12 },
-        POINT { x: 5, y: 12 },
-        POINT { x: 10, y: 12 },
-        POINT { x: 0, y: 7 },
-        POINT { x: 10, y: 7 },
-    ];
-    const THRESHOLD: u8 = 100; // Minimum brightness value of the pixel
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ReadNumberError {
+    UnknownSequence { flags: u16 },
+}
 
-    let mut guess_bitflags: i32 = 0;
-    let screen = SCREEN_DATA.read().unwrap();
-    for (sample, offset) in SAMPLE_OFFSETS.iter().enumerate() {
-        let sample_pos = POINT {
-            x: x + offset.x,
-            y: y + offset.y,
-        };
-        if screen.pixel_color_at(sample_pos).gray() > THRESHOLD {
-            guess_bitflags |= 1 << sample;
+impl std::fmt::Display for ReadNumberError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReadNumberError::UnknownSequence { flags } => {
+                let [tm, tl, tr, mm, ml, mr, bl, bm, br] =
+                    std::array::from_fn(|i| ((flags >> i) & 1) != 0)
+                        .map(|set| if set { '#' } else { '_' });
+                write!(
+                    f,
+                    "unrecognized combination of pixels:\n {tm} \n{tl} {tr}\n{ml}{mm}{mr}\n{bl}{bm}{br}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ReadNumberError {}
+
+impl ScreenData {
+    /// Input should be top-left corner of the number followed by the size
+    fn read_number(&self, x: i32, y: i32) -> Result<u8, ReadNumberError> {
+        const SAMPLE_OFFSETS: [POINT; 9] = [
+            POINT { x: 5, y: 0 },   // top middle
+            POINT { x: 0, y: 7 },   // "top" left
+            POINT { x: 10, y: 7 },  // "top" right
+            POINT { x: 5, y: 8 },   // middle middle
+            POINT { x: 0, y: 8 },   // middle left
+            POINT { x: 10, y: 8 },  // middle right
+            POINT { x: 0, y: 12 },  // bottom left
+            POINT { x: 5, y: 12 },  // bottom middle
+            POINT { x: 10, y: 12 }, // bottom right
+        ];
+        const THRESHOLD: u8 = 100; // Minimum brightness value of the pixel
+
+        let mut guess_bitflags: u16 = 0;
+        for (sample, offset) in SAMPLE_OFFSETS.iter().enumerate() {
+            let sample_pos = POINT {
+                x: x + offset.x,
+                y: y + offset.y,
+            };
+            if self.pixel_color_at(sample_pos).gray() > THRESHOLD {
+                guess_bitflags |= 1 << sample;
+            }
+        }
+
+        match guess_bitflags {
+            0b010110111 => Ok(0),
+            0b010001001 => Ok(1),
+            0b111001001 => Ok(2),
+            0b010000001 => Ok(3),
+            0b000111010 => Ok(4),
+            0b010100101 => Ok(5),
+            0b010110011 => Ok(6),
+            0b000001001 => Ok(7),
+            0b010110001 => Ok(8),
+            0b010000101 => Ok(9),
+            flags => Err(ReadNumberError::UnknownSequence { flags }),
         }
     }
 
-    match guess_bitflags {
-        0b110101101 => 0,
-        0b000100011 => 1,
-        0b001110011 => 2,
-        0b000100001 => 3,
-        0b010001110 => 4,
-        0b100101001 => 5,
-        0b010101101 => 6,
-        0b000000011 => 7,
-        0b000101101 => 8,
-        0b100100001 => 9,
-        _ => 0, // 0 on Error
+    /// Run this about once every frame
+    ///
+    /// Returns time in deciseconds on success
+    pub fn read_game_clock(&self) -> Result<u16, ReadNumberError> {
+        let deciseconds = self.read_number(GameData::CLK_DECISEC_X, GameData::CLK_POS.y)? as u16;
+
+        let seconds = self.read_number(GameData::CLK_SEC_X, GameData::CLK_POS.y)? as u16;
+
+        let tens_of_seconds = self.read_number(GameData::CLK_10SEC_X, GameData::CLK_POS.y)? as u16;
+
+        let minute = self.read_number(GameData::CLK_POS.x, GameData::CLK_POS.y)? as u16;
+
+        Ok(deciseconds
+            + DECISECS_PER_SEC as u16
+                * (seconds + 10 * tens_of_seconds + SECS_PER_MIN as u16 * minute))
     }
 }
 
-/// Run this about once every frame
-fn read_game_clock() {
-    let deciseconds = read_number(pnt::CLK_DECISEC_X, pnt::CLK_POS.y) as u16;
-    let seconds = read_number(pnt::CLK_SEC_X, pnt::CLK_POS.y) as u16;
-    let tens_of_seconds = read_number(pnt::CLK_10SEC_X, pnt::CLK_POS.y) as u16;
-    let minute = read_number(pnt::CLK_POS.x, pnt::CLK_POS.y) as u16;
-
-    let time = deciseconds
-        + DECISECS_PER_SEC as u16 * (seconds + 10 * tens_of_seconds + SECS_PER_MIN as u16 * minute);
-
-    GAME_STATE.write().unwrap().game.time.update_time(time);
+impl GameState {
+    pub fn does_ventilation_need_reset(&self, screen_data: &ScreenData) -> bool {
+        screen_data
+            .pixel_color_at(match self.state() {
+                State::Office => OfficeData::VENT_WARNING_POS,
+                _ => CameraData::VENT_WARNING_POS,
+            })
+            .red_dev()
+            > 35
+    }
 }
 
-fn does_ventilation_need_reset() -> bool {
-    SCREEN_DATA
-        .read()
-        .unwrap()
-        .pixel_color_at(match &GAME_STATE.read().unwrap().state {
-            StateData::Office(_) => pnt::ofc::VENT_WARNING_POS,
-            _ => pnt::cam::VENT_WARNING_POS,
-        })
-        .red_dev()
-        > 35
-}
-
-fn generate_sample_points(start: POINT, scale: i32) -> [POINT; 5] {
+const fn generate_sample_points(start: POINT, scale: i32) -> [POINT; 5] {
     [
         start,
         POINT {
@@ -965,33 +980,33 @@ fn generate_sample_points(start: POINT, scale: i32) -> [POINT; 5] {
     ]
 }
 
-/// - `center`: Point around which to generate the sample points
-/// - `compare`: Normalized color against which to compare the color at the sample points
-/// - `threshold`: 0..1 double value for the minimum similarity required to consider a sample point a "match"
-///
-/// returns: Total number of sample points which exceeded the threshold
-fn test_samples(center: POINT, compare: CNorm, threshold: f64) -> i32 {
-    let mut match_count = 0;
-    let screen = SCREEN_DATA.read().unwrap();
-    for sample_point in generate_sample_points(center, 4) {
-        let sample = screen.pixel_color_at(sample_point).normalized();
-        if sample.normalized().dot(compare) > threshold {
-            match_count += 1;
+impl ScreenData {
+    /// - `center`: Point around which to generate the sample points
+    /// - `compare`: Normalized color against which to compare the color at the sample points
+    /// - `threshold`: 0..1 double value for the minimum similarity required to consider a sample point a "match"
+    ///
+    /// returns: Total number of sample points which exceeded the threshold
+    pub fn test_samples(&self, center: POINT, compare: CNorm, threshold: f64) -> i32 {
+        let mut match_count = 0;
+        for sample_point in generate_sample_points(center, 4) {
+            let sample = self.pixel_color_at(sample_point).normalized();
+            if sample.normalized().dot(compare) > threshold {
+                match_count += 1;
+            }
         }
+        match_count
     }
-    match_count
-}
 
-fn test_samples_gray(center: POINT, compare: u8, max_difference: u8) -> i32 {
-    let mut match_count: i32 = 0;
-    let screen = SCREEN_DATA.read().unwrap();
-    for sample_point in generate_sample_points(center, 4) {
-        let sample = screen.pixel_color_at(sample_point).gray();
-        if sample.abs_diff(compare) > max_difference {
-            match_count += 1;
+    pub fn test_samples_gray(&self, center: POINT, compare: u8, max_difference: u8) -> i32 {
+        let mut match_count: i32 = 0;
+        for sample_point in generate_sample_points(center, 4) {
+            let sample = self.pixel_color_at(sample_point).gray();
+            if sample.abs_diff(compare) > max_difference {
+                match_count += 1;
+            }
         }
+        match_count
     }
-    match_count
 }
 
 /// Returns the position of the maximum value
@@ -1006,309 +1021,313 @@ fn max_in_array<I: IntoIterator<Item: PartialOrd>>(it: I) -> Option<usize> {
     Some(max_pos)
 }
 
-/// For finding the yaw of the office
-fn locate_office_lamp() {
-    const Y: i32 = 66;
-    const THRESHOLD: u8 = 200;
-    const START: i32 = 723;
-    const WIDTH: i32 = 585;
-    let screen = SCREEN_DATA.read().unwrap();
-    for x in START..START + WIDTH {
-        if screen.pixel_color_at(POINT { x, y: Y }).gray() > THRESHOLD {
-            // 100% of the samples must be 80% matching. Flickering be damned.
-            if test_samples_gray(POINT { x, y: Y }, 255, 20) == 5 {
-                match &mut GAME_STATE.write().unwrap().state {
-                    StateData::Office(od) => {
-                        od.office_yaw = (x as f64 - START as f64) / WIDTH as f64;
+impl GameState {
+    /// For finding the yaw of the office
+    pub fn locate_office_lamp(&mut self, screen_data: &ScreenData) {
+        const Y: i32 = 66;
+        const THRESHOLD: u8 = 200;
+        const START: i32 = 723;
+        const WIDTH: i32 = 585;
+        for x in START..START + WIDTH {
+            if screen_data.pixel_color_at(POINT { x, y: Y }).gray() > THRESHOLD {
+                // 100% of the samples must be 80% matching. Flickering be damned.
+                if screen_data.test_samples_gray(POINT { x, y: Y }, 255, 20) == 5 {
+                    match &mut self.state {
+                        StateData::Office(od) => {
+                            od.office_yaw = (x as f64 - START as f64) / WIDTH as f64;
+                        }
+                        _ => panic!(),
                     }
-                    _ => panic!(),
+                    break;
                 }
-                break;
             }
         }
     }
-}
 
-fn update_state() {
-    const THRESHOLD: f64 = 0.99;
-    let mut new_state = State::Office;
-    // List of how many samples returned as matches for each of the buttons being tested
-    let states_to_test = [State::Camera, State::Vent, State::Duct].map(|sys_btn| {
-        test_samples(
-            Button::from(sys_btn).pos(),
-            *clr::SYS_BTN_COLOR_NRM,
-            THRESHOLD,
-        )
-    });
-    let index_of_max = max_in_array(states_to_test).unwrap();
-    // We must have over 50% of the samples returning as matches
-    if states_to_test[index_of_max] == 5 {
-        new_state = match index_of_max {
-            0 => State::Camera,
-            1 => State::Vent,
-            2 => State::Duct,
-            3 => State::Office,
-            _ => todo!(),
+    pub fn update_state(&mut self, screen_data: &ScreenData) {
+        const THRESHOLD: f64 = 0.99;
+        let mut new_state = State::Office;
+        // List of how many samples returned as matches for each of the buttons being tested
+        let states_to_test = [State::Camera, State::Vent, State::Duct].map(|sys_btn| {
+            screen_data.test_samples(
+                Button::from(sys_btn).pos(),
+                *clr::SYS_BTN_COLOR_NRM,
+                THRESHOLD,
+            )
+        });
+        let index_of_max = max_in_array(states_to_test).unwrap();
+        // We must have over 50% of the samples returning as matches
+        if states_to_test[index_of_max] == 5 {
+            new_state = match index_of_max {
+                0 => State::Camera,
+                1 => State::Vent,
+                2 => State::Duct,
+                3 => State::Office,
+                _ => todo!(),
+            }
         }
-    }
-    // Update the global state
-    GAME_STATE.write().unwrap().state = match new_state {
-        State::Office => StateData::Office(OfficeData { office_yaw: 0.0 }),
-
-        State::Camera => {
-            let cams_to_test: [i32; 8] = std::array::from_fn(|camera| {
-                test_samples(
-                    Button::from(Camera::try_from(camera as u8).unwrap()).pos(),
-                    *clr::CAM_BTN_COLOR_NRM,
-                    THRESHOLD,
-                )
-            });
-            // If we've confirmed the state then there's no doubt we can identify the camera
-            StateData::Camera(CamData {
-                camera: Camera::try_from(max_in_array(cams_to_test).unwrap() as u8).unwrap(),
-            })
-        }
-
-        State::Vent => StateData::Vent(VentData {
-            vent_snare: Vent::default(),
-        }),
-
-        State::Duct => StateData::Duct(DuctData {
-            closed_duct: Duct::West,
-            audio_lure: POINT::default(),
-        }),
-    }
-}
-
-/// Assumes we are already in the office
-fn office_look_left() {
-    assert!(
-        matches!(GAME_STATE.read().unwrap().state, StateData::Office(_)),
-        "cannot look left/right in cameras"
-    );
-    simulate_mouse_goto(POINT { x: 8, y: 540 });
-    sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
-}
-
-/// Assumes we are already in the office
-fn office_look_right() {
-    assert!(
-        matches!(GAME_STATE.read().unwrap().state, StateData::Office(_)),
-        "cannot look left/right in cameras"
-    );
-    simulate_mouse_goto(POINT { x: 1910, y: 540 });
-    sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
-}
-
-///////////////////////////////////////////////////////////////////////////
-// This is where basic outputs are combined to make more complex actions //
-///////////////////////////////////////////////////////////////////////////
-
-/// Updates all known game information
-fn refresh_game_data() {
-    update_state();
-    read_game_clock();
-    if does_ventilation_need_reset() {
-        GAME_STATE.write().unwrap().game.ventilation_needs_reset();
-    }
-    //LocateOfficeLamp(); // Needs work
-}
-
-fn toggle_monitor() {
-    simulate_keypress(VirtualKey::CameraToggle);
-    sleep(Duration::from_millis(CAM_RESP_MS as u64));
-    update_state();
-}
-
-fn open_monitor_if_closed() {
-    if matches!(GAME_STATE.read().unwrap().state, StateData::Office(_)) {
-        toggle_monitor();
-    }
-}
-
-fn close_monitor_if_open() {
-    if matches!(GAME_STATE.read().unwrap().state, StateData::Office(_)) {
-        toggle_monitor();
-    }
-}
-
-fn ensure_system(system: State) {
-    open_monitor_if_closed();
-    if GAME_STATE.read().unwrap().state.state() != system {
-        simulate_mouse_click_at(Button::from(system).pos());
-    }
-}
-
-fn open_camera_if_closed() {
-    ensure_system(State::Camera);
-    sleep(Duration::from_millis(1)); // In case the next step is another button press elsewhere
-}
-
-// `cam` only used if `state == State::Camera`
-fn enter_game_state(state: State, cam: Camera) {
-    if GAME_STATE.read().unwrap().state.state() != state {
-        if matches!(state, State::Office) {
-            close_monitor_if_open();
-        } else {
-            open_monitor_if_closed();
-        }
-        match state {
-            State::Office => {}
+        // Update the global state
+        self.state = match new_state {
+            State::Office => StateData::Office(OfficeData { office_yaw: 0.0 }),
 
             State::Camera => {
-                if let StateData::Camera(cd) = &mut GAME_STATE.write().unwrap().state
-                    && cd.camera != cam
-                {
-                    simulate_mouse_click_at(Button::from(cam).pos());
-                }
+                let cams_to_test: [i32; 8] = std::array::from_fn(|camera| {
+                    screen_data.test_samples(
+                        Button::from(Camera::try_from(camera as u8).unwrap()).pos(),
+                        *clr::CAM_BTN_COLOR_NRM,
+                        THRESHOLD,
+                    )
+                });
+                // If we've confirmed the state then there's no doubt we can identify the camera
+                StateData::Camera(CameraData {
+                    camera: Camera::try_from(max_in_array(cams_to_test).unwrap() as u8).unwrap(),
+                })
             }
 
-            State::Duct => simulate_mouse_click_at(Button::DuctSystem.pos()),
-            State::Vent => simulate_mouse_click_at(Button::VentSystem.pos()),
+            State::Vent => StateData::Vent(VentData {
+                vent_snare: Vent::default(),
+            }),
+
+            State::Duct => StateData::Duct(DuctData {
+                closed_duct: Duct::West,
+                audio_lure: POINT::default(),
+            }),
+        }
+    }
+
+    /// Assumes we are already in the office
+    pub fn office_look_left(&mut self) {
+        assert_eq!(
+            self.state(),
+            State::Office,
+            "cannot look left/right in cameras"
+        );
+        simulate_mouse_goto(POINT { x: 8, y: 540 });
+        sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
+    }
+
+    /// Assumes we are already in the office
+    fn office_look_right(&mut self) {
+        assert_eq!(
+            self.state(),
+            State::Office,
+            "cannot look left/right in cameras"
+        );
+        simulate_mouse_goto(POINT { x: 1910, y: 540 });
+        sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    // This is where basic outputs are combined to make more complex actions //
+    ///////////////////////////////////////////////////////////////////////////
+
+    /// Updates all known game information
+    pub fn refresh_game_data(&mut self, screen_data: &RwLock<ScreenData>) {
+        self.update_state(&screen_data.read().unwrap());
+        match screen_data.read().unwrap().read_game_clock() {
+            Ok(time) => self.game.time.update_time(time),
+            Err(e) => eprintln!("error reading game clock: {e}"),
+        }
+        if self.does_ventilation_need_reset(&screen_data.read().unwrap()) {
+            self.game.ventilation_needs_reset();
+        }
+        //self.locate_office_lamp(); // Needs work
+    }
+
+    pub fn toggle_monitor(&mut self, screen_data: &RwLock<ScreenData>) {
+        simulate_keypress(VirtualKey::CameraToggle);
+        sleep(Duration::from_millis(CAM_RESP_MS as u64));
+        self.update_state(&screen_data.read().unwrap());
+    }
+
+    pub fn open_monitor_if_closed(&mut self, screen_data: &RwLock<ScreenData>) {
+        if self.state() == State::Office {
+            self.toggle_monitor(screen_data);
+        }
+    }
+
+    // `cam` only used if `state == State::Camera`
+    pub fn enter_game_state(
+        &mut self,
+        new_state: State,
+        cam: Camera,
+        screen_data: &RwLock<ScreenData>,
+    ) {
+        let current_state = self.state();
+        if current_state != new_state {
+            if (current_state == State::Office) != (new_state == State::Office) {
+                self.toggle_monitor(screen_data);
+            }
+            match new_state {
+                State::Office => {}
+
+                State::Camera => {
+                    if let StateData::Camera(cd) = &mut self.state
+                        && cd.camera != cam
+                    {
+                        simulate_mouse_click_at(Button::from(cam).pos());
+                    }
+                }
+
+                State::Duct => simulate_mouse_click_at(Button::DuctSystem.pos()),
+                State::Vent => simulate_mouse_click_at(Button::VentSystem.pos()),
+            }
+            sleep(Duration::from_millis(1));
+        }
+    }
+
+    //
+    // Playbook of actions
+    //
+
+    pub fn handle_funtime_foxy(&mut self, screen_data: &RwLock<ScreenData>) {
+        self.open_monitor_if_closed(screen_data);
+        if self.state() != State::Camera {
+            simulate_mouse_click_at(Button::from(State::Camera).pos());
         }
         sleep(Duration::from_millis(1));
-    }
-}
-
-/// Playbook of actions
-mod action {
-    use super::*;
-
-    pub fn handle_funtime_foxy() {
-        open_camera_if_closed();
         simulate_mouse_click_at(Button::Cam06.pos());
     }
 
-    pub fn reset_vents() {
-        open_monitor_if_closed(); // We don't need to care which system, only that the monitor is up.
+    pub fn reset_vents(&mut self, screen_data: &RwLock<ScreenData>) {
+        self.open_monitor_if_closed(screen_data); // We don't need to care which system, only that the monitor is up.
         simulate_mouse_click_at(Button::ResetVent.pos());
-        GAME_STATE
-            .write()
-            .unwrap()
-            .game
-            .ventilation_has_been_reset();
+        self.game.ventilation_has_been_reset();
         sleep(Duration::from_millis(10));
     }
 
-    pub fn handle_nmbb(winh: &mut WindowsHandles) {
+    pub fn handle_nmbb(&self, screen_data: &RwLock<ScreenData>) {
         sleep(Duration::from_millis(17)); // Wait a little bit to make sure we have time for the screen to change
-        SCREEN_DATA.write().unwrap().update_screencap(winh);
-        if is_nmbb_standing() {
+        // TODO: Wait for next screencap update
+        if is_nmbb_standing(&screen_data.read().unwrap()) {
             // Double check--NMBB will kill us if we flash him wrongfully
             // If he is in fact still up, flash the light on him to put him back down
             simulate_keypress(VirtualKey::Flashlight);
         }
     }
-}
 
-fn act_on_game_data(winh: &mut WindowsHandles) {
-    /**************************************************************************************************
-     * Definitions
-     * ===========
-     * "Behavioral events" - Some things are not events so much as hints that our current behavior is
-     *   unsustainable due to external data. When one of these occurs, we cannot simply 'handle' it
-     *   and be done, and must change our behavioral pattern to better suit the needs of the event
-     *   until the state has returned to neutral. Thankfully, the behavioral changes are usually
-     *   transient and only require temporarily disabling certain systems.
-     *
-     * "Inturruption events" - Events which give us abrupt notice which we have only a short window to
-     *   react to. We don't know ahead of time when these events will occur, and they can trigger
-     *   automatically without intervention.
-     *
-     * "Transition events" - Events triggered by a change in gamestate (like opening or closing the
-     *   monitor). These events usually aren't timed and can be done at leisure, but they limit the
-     *   actions we can perform without handling them.
-     *
-     * "Timed events" - Events which are time-sensitive relative to the in-game clock or a countdown.
-     *   These are usually long-term and while high-priority, can be done when convenient.
-     *
-     * "Transient events" - These are events which can be detected & reacted to without any dependence
-     *   upon or changes to the current game state.
-     *
-     * "Distractor events" - Depending on the event, these events can be quick difficult to react to.
-     *   They make it much harder to react to other events, and may even take away our control.
-     *   Thankfully these events are usually either very short in duration or can be handled by rote.
-     **************************************************************************************************/
-    if matches!(GAME_STATE.read().unwrap().state, StateData::Office(_)) && is_nmbb_standing() {
-        action::handle_nmbb(winh);
+    pub fn act_on_game_data(&mut self, screen_data: &RwLock<ScreenData>) {
+        /**************************************************************************************************
+         * Definitions
+         * ===========
+         * "Behavioral events" - Some things are not events so much as hints that our current behavior is
+         *   unsustainable due to external data. When one of these occurs, we cannot simply 'handle' it
+         *   and be done, and must change our behavioral pattern to better suit the needs of the event
+         *   until the state has returned to neutral. Thankfully, the behavioral changes are usually
+         *   transient and only require temporarily disabling certain systems.
+         *
+         * "Inturruption events" - Events which give us abrupt notice which we have only a short window to
+         *   react to. We don't know ahead of time when these events will occur, and they can trigger
+         *   automatically without intervention.
+         *
+         * "Transition events" - Events triggered by a change in gamestate (like opening or closing the
+         *   monitor). These events usually aren't timed and can be done at leisure, but they limit the
+         *   actions we can perform without handling them.
+         *
+         * "Timed events" - Events which are time-sensitive relative to the in-game clock or a countdown.
+         *   These are usually long-term and while high-priority, can be done when convenient.
+         *
+         * "Transient events" - These are events which can be detected & reacted to without any dependence
+         *   upon or changes to the current game state.
+         *
+         * "Distractor events" - Depending on the event, these events can be quick difficult to react to.
+         *   They make it much harder to react to other events, and may even take away our control.
+         *   Thankfully these events are usually either very short in duration or can be handled by rote.
+         **************************************************************************************************/
+
+        if self.state() == State::Office && is_nmbb_standing(&screen_data.read().unwrap()) {
+            self.handle_nmbb(screen_data);
+        }
+
+        if self.game.does_ventilation_need_reset() {
+            self.reset_vents(screen_data);
+        }
+
+        // We have <= 1 seconds before the next hour
+        if (DECISECS_PER_HOUR - self.game.time.deciseconds_since_hour())
+            <= (DECISECS_PER_SEC as u16 + (CAM_RESP_MS / MS_PER_DECISEC as u16))
+        {
+            self.handle_funtime_foxy(screen_data);
+            sleep(Duration::from_millis(10));
+        }
+
+        // Lowest priority actions should go down here //
     }
-
-    if GAME_STATE
-        .read()
-        .unwrap()
-        .game
-        .does_ventilation_need_reset()
-    {
-        action::reset_vents();
-    }
-
-    // We have <= 1 seconds before the next hour
-    if (DECISECS_PER_HOUR
-        - GAME_STATE
-            .read()
-            .unwrap()
-            .game
-            .time
-            .deciseconds_since_hour())
-        <= (DECISECS_PER_SEC as u16 + (CAM_RESP_MS / MS_PER_DECISEC as u16))
-    {
-        action::handle_funtime_foxy();
-        sleep(Duration::from_millis(10));
-    }
-
-    // Lowest priority actions should go down here //
 }
 
 fn main() {
-    let winh = Arc::new(RwLock::new(WindowsHandles::new()));
+    let mut winh = WindowsHandles::new();
 
-    SCREEN_DATA.write().unwrap().data.resize(
+    let screencap_updated: Condvar = Condvar::new();
+    let screen_data: std::sync::RwLock<ScreenData> =
+        std::sync::RwLock::new(ScreenData::new(Vec::new()));
+
+    screen_data.write().unwrap().data.resize(
         CHANNELS_PER_COLOR
             * *SCREEN_WIDTH.get().unwrap() as usize
             * *SCREEN_HEIGHT.get().unwrap() as usize,
         0,
     );
 
-    SCREEN_DATA
-        .write()
-        .unwrap()
-        .update_screencap(&mut winh.write().unwrap()); // first time screen update
-
     let threads_should_loop: AtomicBool = AtomicBool::new(true);
+
     print!("{CLEAR_CONSOLE}");
     std::thread::scope(|s| {
-        // Spawn a thread for reading the screen pixels
+        screen_data.write().unwrap().update_screencap(&mut winh); // first time screen update
+
+        // Make sure that user control override doesn't disable the user from closing the program
         s.spawn(|| {
+            // !! SAFETY !!
             while threads_should_loop.load(Relaxed) {
-                SCREEN_DATA
-                    .write()
-                    .unwrap()
-                    .update_screencap(&mut winh.write().unwrap()); // Update our internal copy of what the gamescreen looks like so we can sample its pixels
-                sleep(Duration::from_millis(2));
+                sleep(Duration::from_millis(2)); // Give the user time to provide input
+
+                if is_key_down(VirtualKey::Esc) {
+                    // mask to ignore the "toggled" bit
+                    println!("{CLEAR_CONSOLE}\nUser has chosen to reclaim control. Task ended.");
+                    threads_should_loop.store(false, Relaxed); // This tells the worker threads to stop
+                }
             }
         });
 
         // Spawn a thread for acting on that data
         s.spawn(|| {
+            // All the information we have about the state of the game
+            let mut game_state = GameState::new();
             while threads_should_loop.load(Relaxed) {
-                refresh_game_data(); // Using the screencap we just generated, update the game data statuses for decision making
-                GAME_STATE.read().unwrap().display_data(); // Output the data for the user to view
-                act_on_game_data(&mut winh.write().unwrap()); // Based upon the game data, perform all actions necessary to return the game to a neutral state
+                game_state.refresh_game_data(&screen_data); // Using the screencap we just generated, update the game data statuses for decision making
+                game_state.display_data(&screen_data); // Output the data for the user to view
+                game_state.act_on_game_data(&screen_data); // Based upon the game data, perform all actions necessary to return the game to a neutral state
                 sleep(Duration::from_millis(4));
             }
         });
 
-        // !! SAFETY !!
-        // Make sure that user control override doesn't disable the user from closing the program
-        while threads_should_loop.load(Relaxed) {
-            sleep(Duration::from_millis(2)); // Give the user time to provide input
+        // // Spawn a thread for the Raylib debug window
+        // s.spawn(|| {
+        //     use raylib::prelude::*;
 
-            if is_key_down(VirtualKey::Esc) {
-                // mask to ignore the "toggled" bit
-                println!("{CLEAR_CONSOLE}\nUser has chosen to reclaim control. Task ended.");
-                threads_should_loop.store(false, Relaxed); // This tells the worker threads to stop
-                break;
-            }
+        //     let (mut rl, thread) = init()
+        //         .size(1280, 720)
+        //         .title("TheKingOfFNaF")
+        //         .resizable()
+        //         .build();
+
+        //     while threads_should_loop.load(Relaxed) {
+        //         if rl.window_should_close() {
+        //             threads_should_loop.store(false, Relaxed);
+        //             break;
+        //         }
+
+        //         let mut d = rl.begin_drawing(&thread);
+        //         d.clear_background(Color::BLACK);
+        //     }
+        // });
+
+        // Read screen pixels on the current thread so that handles don't risk going on the wrong thread
+        while threads_should_loop.load(Relaxed) {
+            // Update our internal copy of what the gamescreen looks like so we can sample its pixels
+            screen_data.write().unwrap().update_screencap(&mut winh);
+            screencap_updated.notify_one();
+            sleep(Duration::from_millis(2));
         }
 
         println!("\nWaiting on worker threads...");

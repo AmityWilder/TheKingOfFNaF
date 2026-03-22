@@ -27,10 +27,6 @@ pub struct WindowsHandles {
     pub bitmap: HBITMAP,
 }
 
-// this probably ISN'T safe
-unsafe impl Sync for WindowsHandles {}
-unsafe impl Send for WindowsHandles {}
-
 impl Drop for WindowsHandles {
     fn drop(&mut self) {
         unsafe {
@@ -193,17 +189,25 @@ pub fn mouse_input(movement: Option<MouseMovement>, m1: M1State) -> INPUT {
     }
 }
 
-pub fn simulate_keypress(key: VirtualKey) {
+pub fn simulate_key_down(key: VirtualKey) {
     let input: INPUT = key_input(key, false);
     unsafe {
         SendInput(&[input], size_of::<INPUT>() as i32);
     }
-    sleep(Duration::from_millis(10));
+    sleep(Duration::from_millis(2));
+}
+
+pub fn simulate_key_up(key: VirtualKey) {
     let input: INPUT = key_input(key, true);
     unsafe {
         SendInput(&[input], size_of::<INPUT>() as i32);
     }
     sleep(Duration::from_millis(2));
+}
+
+pub fn simulate_keypress(key: VirtualKey) {
+    simulate_key_down(key);
+    simulate_key_up(key);
 }
 
 pub fn get_mouse_pos() -> POINT {
@@ -242,39 +246,30 @@ pub fn simulate_mouse_goto(p: POINT) {
     }
 }
 
-pub fn simulate_mouse_click() {
+pub fn simulate_mouse_down() {
     let input: INPUT = mouse_input(None, M1State::Press);
     unsafe {
         SendInput(&[input], size_of::<INPUT>() as i32);
     }
+    sleep(Duration::from_millis(2));
+}
 
-    sleep(Duration::from_millis(10));
-
+pub fn simulate_mouse_up() {
     let input: INPUT = mouse_input(None, M1State::Release);
     unsafe {
         SendInput(&[input], size_of::<INPUT>() as i32);
     }
+    sleep(Duration::from_millis(2));
+}
+
+pub fn simulate_mouse_click() {
+    simulate_mouse_down();
+    simulate_mouse_up();
 }
 
 pub fn simulate_mouse_click_at(p: POINT) {
     simulate_mouse_goto(p);
     simulate_mouse_click();
-}
-
-pub fn simulate_key_down(key: VirtualKey) {
-    let input: INPUT = key_input(key, false);
-    unsafe {
-        SendInput(&[input], size_of::<INPUT>() as i32);
-    }
-    sleep(Duration::from_millis(2));
-}
-
-pub fn simulate_key_up(key: VirtualKey) {
-    let input: INPUT = key_input(key, true);
-    unsafe {
-        SendInput(&[input], size_of::<INPUT>() as i32);
-    }
-    sleep(Duration::from_millis(2));
 }
 
 pub fn is_key_down(key: VirtualKey) -> bool {
