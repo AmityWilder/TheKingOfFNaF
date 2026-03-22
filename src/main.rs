@@ -1,7 +1,7 @@
 #![deny(clippy::missing_safety_doc)]
 #![warn(clippy::undocumented_unsafe_blocks)] // TODO: change this to deny once windows.h safety has been cleared up
 
-mod win;
+use raylib::prelude as rl;
 use std::{
     sync::{
         Condvar, OnceLock, RwLock,
@@ -9,8 +9,9 @@ use std::{
     },
     {thread::sleep, time::Duration},
 };
-
 use win::*;
+
+mod win;
 
 //
 // Global constants -- These give context to unchanging values
@@ -188,7 +189,7 @@ pub struct ClockTime {
     /// One hour is 45 seconds. A night is 4 minutes 30 seconds, or 270 seconds -- 2700 deciseconds.
     /// This can be expressed in 12 bits as 0b101010001100.
     deciseconds: u16,
-    pings_since_change: i32,
+    pings_since_change: u32,
 }
 
 impl PartialOrd for ClockTime {
@@ -221,35 +222,36 @@ impl ClockTime {
         self.deciseconds
     }
 
-    pub const fn pings_since_change(&self) -> i32 {
+    pub const fn pings_since_change(&self) -> u32 {
         self.pings_since_change
     }
 
-    // It takes 1 bit more than a char to describe the number of seconds in a night.
+    /// It takes 1 bit more than a char to describe the number of seconds in a night.
     pub const fn seconds(&self) -> u16 {
         self.deciseconds / DECISECS_PER_SEC as u16
     }
 
-    // Not sure what we'd need this for, but just in case.
+    /// Not sure what we'd need this for, but just in case.
     pub const fn minutes(&self) -> u16 {
         self.seconds() / SECS_PER_MIN as u16 // realtime
     }
 
-    // What hour of the night we are at
+    /// What hour of the night we are at
     pub const fn hour(&self) -> u16 {
         self.seconds() / SECS_PER_HOUR as u16 // gametime
     }
 
-    // Converts hours to deciseconds, for finding how many deciseconds we are through the current hour.
+    /// Converts hours to deciseconds, for finding how many deciseconds we are through the current hour.
     pub const fn whole_hour_deciseconds(&self) -> u16 {
         self.hour() * DECISECS_PER_HOUR
     }
 
-    // Finds how many deciseconds into the current hour we are.
+    /// Finds how many deciseconds into the current hour we are.
     pub const fn deciseconds_since_hour(&self) -> u16 {
         self.deciseconds() - self.whole_hour_deciseconds()
     }
 
+    /// Updates [`Self::pings_since_change`] if the time is a duplicate or erroneous
     pub const fn update_time(&mut self, new_time: u16) {
         if new_time > self.deciseconds
             && new_time < 6000
@@ -268,7 +270,7 @@ impl std::fmt::Display for ClockTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}:{}.{}",
+            "{}:{:02}.{}",
             self.minutes(),
             self.seconds() % SECS_PER_MIN as u16,
             self.deciseconds() % DECISECS_PER_SEC as u16
@@ -467,12 +469,41 @@ impl DuctData {
     pub const DUCT_R_BTN_POS: POINT = POINT { x: 1016, y: 844 };
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct ClockTimeResult {
+    pub last_trusted: ClockTime,
+    pub error: Option<ReadNumberError>,
+}
+
+impl std::ops::Deref for ClockTimeResult {
+    type Target = ClockTime;
+
+    fn deref(&self) -> &Self::Target {
+        &self.last_trusted
+    }
+}
+
+impl std::ops::DerefMut for ClockTimeResult {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.last_trusted
+    }
+}
+
+impl From<ClockTime> for ClockTimeResult {
+    fn from(value: ClockTime) -> Self {
+        ClockTimeResult {
+            last_trusted: value,
+            error: None,
+        }
+    }
+}
+
 /// This is the type which actually stores the data we have about the gamestate
 #[derive(Debug)]
 struct GameData {
     flags: u8,
-    pub time: ClockTime,
-    pub next_ff_show: ClockTime,
+    pub time: ClockTimeResult,
+    pub next_ff_show: ClockTime, // needs a different read_number function
 }
 
 impl GameData {
@@ -487,7 +518,10 @@ impl GameData {
     const fn new() -> Self {
         Self {
             flags: 0,
-            time: ClockTime::new(0),
+            time: ClockTimeResult {
+                last_trusted: ClockTime::new(0),
+                error: None,
+            },
             next_ff_show: ClockTime::new(0),
         }
     }
@@ -593,91 +627,193 @@ impl GameState {
         self.state.state()
     }
 
-    pub fn display_data(&self, screen_data: &RwLock<ScreenData>) {
-        println!(
-            r"{RESET_CURSOR}Time: {}
+    pub fn draw_data(
+        &self,
+        d: &mut rl::RaylibDrawHandle,
+        _thread: &rl::RaylibThread,
+        screen_data: &RwLock<ScreenData>,
+        ucn_numbers: &rl::Texture2D,
+        font_size: i32,
+        color: rl::Color,
+        warn_color: rl::Color,
+        err_color: rl::Color,
+    ) {
+        use raylib::prelude::*;
 
-Ventilation: {}
-  Left door: {}
- Front vent: {}
- Right door: {}
- Right vent: {}
- Flashlight: {}
-Next Funtime Foxy show: {}
-",
-            self.game.time,
-            if self.game.does_ventilation_need_reset() {
-                "WARNING"
-            } else {
-                "good   "
-            },
-            if self.game.is_door_closed(0) {
-                "closed"
-            } else {
-                "open  "
-            },
-            if self.game.is_door_closed(1) {
-                "closed"
-            } else {
-                "open  "
-            },
-            if self.game.is_door_closed(2) {
-                "closed"
-            } else {
-                "open  "
-            },
-            if self.game.is_door_closed(3) {
-                "closed"
-            } else {
-                "open  "
-            },
-            if self.game.is_flashlight_on() {
-                "on "
-            } else {
-                "off"
-            },
-            self.game.next_ff_show
-        );
+        let line_space = font_size + 4;
+        let mut y = 0;
 
-        print!("<");
-        for s in [State::Camera, State::Vent, State::Duct, State::Office] {
-            let [open, close] = match (&s, &self.state) {
-                (State::Camera, StateData::Camera(_))
-                | (State::Vent, StateData::Vent(_))
-                | (State::Duct, StateData::Duct(_))
-                | (State::Office, StateData::Office(_)) => *b"[]",
-                _ => *b"  ",
+        let time_str = &format!("Time: {}", *self.game.time);
+        d.draw_text(time_str, 0, y, font_size, color);
+        if let Some(e) = self.game.time.error {
+            let mut x = d.measure_text(time_str, font_size) + font_size;
+            const WARN_STR: &str = "out of date: ";
+            d.draw_text(WARN_STR, x, y, font_size, warn_color);
+            x += d.measure_text(WARN_STR, font_size);
+            match e {
+                ReadNumberError::UnknownSequence { flags } => {
+                    const SCALE: i32 = 4;
+                    const DIGIT_WIDTH: i32 = 11 + 1;
+                    const ERR_STR: &str = "unrecognized combination of pixels: ";
+                    d.draw_text(ERR_STR, x, y, font_size, err_color);
+                    x += d.measure_text(ERR_STR, font_size);
+                    d.draw_texture_ex(
+                        ucn_numbers,
+                        rvec2(x + DIGIT_WIDTH * SCALE, y),
+                        0.0,
+                        SCALE as f32,
+                        Color::GRAY,
+                    );
+                    for (i, expect_flags) in std::iter::once(0b111111111)
+                        .chain(READ_NUMBER_SAMPLE_FLAGS)
+                        .enumerate()
+                    {
+                        let digit_x = i as i32 * DIGIT_WIDTH * SCALE;
+                        for (flag_matches, offset) in (0..)
+                            .map(|j| ((flags >> j) & 1) == ((expect_flags >> j) & 1))
+                            .zip(READ_NUMBER_SAMPLE_OFFSETS)
+                        {
+                            d.draw_rectangle(
+                                x + SCALE * offset.x + digit_x,
+                                y + SCALE * offset.y,
+                                SCALE,
+                                SCALE,
+                                if expect_flags == 0b111111111 {
+                                    if flag_matches {
+                                        Color::WHITE
+                                    } else {
+                                        Color::BLUEVIOLET
+                                    }
+                                } else if flag_matches {
+                                    Color::GREEN
+                                } else {
+                                    Color::RED
+                                },
+                            );
+                        }
+                    }
+                }
             }
-            .map(char::from);
-            print!("{open}{s}{close}");
         }
-        println!(">");
+        y += line_space;
+        d.draw_text(
+            &format!(
+                "Ventilation: {}",
+                if self.game.does_ventilation_need_reset() {
+                    "WARNING"
+                } else {
+                    "good"
+                }
+            ),
+            0,
+            y,
+            font_size,
+            color,
+        );
+        y += line_space;
+        for door in ["Left door", "Front vent", "Right door", "Right vent"] {
+            d.draw_text(
+                &format!(
+                    "{door}: {}",
+                    if self.game.is_door_closed(0) {
+                        "closed"
+                    } else {
+                        "open"
+                    }
+                ),
+                0,
+                y,
+                font_size,
+                color,
+            );
+            y += line_space;
+        }
+        d.draw_text(
+            &format!(
+                "Flashlight: {}",
+                if self.game.is_flashlight_on() {
+                    "on"
+                } else {
+                    "off"
+                }
+            ),
+            0,
+            y,
+            font_size,
+            color,
+        );
+        y += line_space;
+        d.draw_text(
+            &format!("Next Funtime Foxy show: {}", self.game.next_ff_show),
+            0,
+            y,
+            font_size,
+            color,
+        );
+        y += line_space;
+
+        const STATES: [State; 4] = [State::Camera, State::Vent, State::Duct, State::Office];
+
+        let mut x = font_size;
+        for s in STATES {
+            let name = &s.to_string();
+            let width = d.measure_text(name, font_size);
+            d.draw_rectangle(
+                x - font_size,
+                y - 1,
+                width + 2 * font_size,
+                font_size + 2,
+                Color::BLUEVIOLET,
+            );
+            if s == self.state() {
+                d.draw_rectangle(
+                    x - font_size / 2,
+                    y - 1,
+                    width + font_size,
+                    font_size + 2,
+                    Color::BLUE,
+                );
+            }
+            d.draw_text(name, x, y, font_size, color);
+            x += width + font_size;
+        }
+        y += line_space;
 
         match &self.state {
             StateData::Camera(cd) => {
-                println!(
-                    "Looking at: CAM 0{} | {:<18}",
-                    (cd.camera as i32 + 1),
-                    cd.camera
+                d.draw_text(
+                    &format!(
+                        "Looking at: CAM 0{} | {}",
+                        (cd.camera as i32 + 1),
+                        cd.camera
+                    ),
+                    0,
+                    y,
+                    font_size,
+                    color,
                 );
             }
 
             StateData::Office(od) => {
-                println!(
-                    "Yaw: {}\nNightmare Balloon Boy: {}",
-                    od.office_yaw,
-                    if is_nmbb_standing(&screen_data.read().unwrap()) {
-                        "standing"
-                    } else {
-                        "sitting "
-                    }
+                d.draw_text(
+                    &format!(
+                        "Yaw: {}\nNightmare Balloon Boy: {}",
+                        od.office_yaw,
+                        if is_nmbb_standing(&screen_data.read().unwrap()) {
+                            "standing"
+                        } else {
+                            "sitting"
+                        }
+                    ),
+                    0,
+                    y,
+                    font_size,
+                    color,
                 );
             }
 
-            _ => println!("TODO"),
+            _ => d.draw_text("TODO", 0, y, font_size, color),
         }
-
-        println!();
     }
 }
 
@@ -886,24 +1022,38 @@ impl std::fmt::Display for ReadNumberError {
 
 impl std::error::Error for ReadNumberError {}
 
+const READ_NUMBER_SAMPLE_OFFSETS: [POINT; 9] = [
+    POINT { x: 5, y: 0 },   // top middle
+    POINT { x: 0, y: 7 },   // "top" left
+    POINT { x: 10, y: 7 },  // "top" right
+    POINT { x: 5, y: 8 },   // middle middle
+    POINT { x: 0, y: 8 },   // middle left
+    POINT { x: 10, y: 8 },  // middle right
+    POINT { x: 0, y: 12 },  // bottom left
+    POINT { x: 5, y: 12 },  // bottom middle
+    POINT { x: 10, y: 12 }, // bottom right
+];
+
+const READ_NUMBER_SAMPLE_FLAGS: [u16; 10] = [
+    0b010110111,
+    0b010001001,
+    0b111001001,
+    0b010000001,
+    0b000111010,
+    0b010100101,
+    0b010110011,
+    0b000001001,
+    0b010110001,
+    0b010000101,
+];
+
 impl ScreenData {
     /// Input should be top-left corner of the number followed by the size
     fn read_number(&self, x: i32, y: i32) -> Result<u8, ReadNumberError> {
-        const SAMPLE_OFFSETS: [POINT; 9] = [
-            POINT { x: 5, y: 0 },   // top middle
-            POINT { x: 0, y: 7 },   // "top" left
-            POINT { x: 10, y: 7 },  // "top" right
-            POINT { x: 5, y: 8 },   // middle middle
-            POINT { x: 0, y: 8 },   // middle left
-            POINT { x: 10, y: 8 },  // middle right
-            POINT { x: 0, y: 12 },  // bottom left
-            POINT { x: 5, y: 12 },  // bottom middle
-            POINT { x: 10, y: 12 }, // bottom right
-        ];
         const THRESHOLD: u8 = 100; // Minimum brightness value of the pixel
 
         let mut guess_bitflags: u16 = 0;
-        for (sample, offset) in SAMPLE_OFFSETS.iter().enumerate() {
+        for (sample, offset) in READ_NUMBER_SAMPLE_OFFSETS.iter().enumerate() {
             let sample_pos = POINT {
                 x: x + offset.x,
                 y: y + offset.y,
@@ -913,19 +1063,13 @@ impl ScreenData {
             }
         }
 
-        match guess_bitflags {
-            0b010110111 => Ok(0),
-            0b010001001 => Ok(1),
-            0b111001001 => Ok(2),
-            0b010000001 => Ok(3),
-            0b000111010 => Ok(4),
-            0b010100101 => Ok(5),
-            0b010110011 => Ok(6),
-            0b000001001 => Ok(7),
-            0b010110001 => Ok(8),
-            0b010000101 => Ok(9),
-            flags => Err(ReadNumberError::UnknownSequence { flags }),
-        }
+        READ_NUMBER_SAMPLE_FLAGS
+            .into_iter()
+            .position(|flags| flags == guess_bitflags)
+            .map(|pos| pos as u8)
+            .ok_or(ReadNumberError::UnknownSequence {
+                flags: guess_bitflags,
+            })
     }
 
     /// Run this about once every frame
@@ -1124,13 +1268,19 @@ impl GameState {
     /// Updates all known game information
     pub fn refresh_game_data(&mut self, screen_data: &RwLock<ScreenData>) {
         self.update_state(&screen_data.read().unwrap());
+
         match screen_data.read().unwrap().read_game_clock() {
-            Ok(time) => self.game.time.update_time(time),
-            Err(e) => eprintln!("error reading game clock: {e}"),
+            Ok(time) => {
+                self.game.time.update_time(time);
+                self.game.time.error = None;
+            }
+            Err(e) => self.game.time.error = Some(e),
         }
+
         if self.does_ventilation_need_reset(&screen_data.read().unwrap()) {
             self.game.ventilation_needs_reset();
         }
+
         //self.locate_office_lamp(); // Needs work
     }
 
@@ -1283,7 +1433,7 @@ fn main() {
 
                 if is_key_down(VirtualKey::Esc) {
                     // mask to ignore the "toggled" bit
-                    println!("{CLEAR_CONSOLE}\nUser has chosen to reclaim control. Task ended.");
+                    println!("User has chosen to reclaim control. Task ended.");
                     threads_should_loop.store(false, Relaxed); // This tells the worker threads to stop
                 }
             }
@@ -1291,43 +1441,63 @@ fn main() {
 
         // Spawn a thread for acting on that data
         s.spawn(|| {
+            use raylib::prelude::*;
+
             // All the information we have about the state of the game
             let mut game_state = GameState::new();
+            let (mut rl, thread) = init()
+                .size(1280, 720)
+                .title("TheKingOfFNaF")
+                .resizable()
+                .build();
+
+            let ucn_numbers = rl
+                .load_texture_from_image(
+                    &thread,
+                    &Image::load_image_from_mem(".png", include_bytes!("ucn_numbers.png")).unwrap(),
+                )
+                .unwrap();
+
+            rl.set_target_fps(60);
+
             while threads_should_loop.load(Relaxed) {
-                game_state.refresh_game_data(&screen_data); // Using the screencap we just generated, update the game data statuses for decision making
-                game_state.display_data(&screen_data); // Output the data for the user to view
-                game_state.act_on_game_data(&screen_data); // Based upon the game data, perform all actions necessary to return the game to a neutral state
-                sleep(Duration::from_millis(4));
+                if rl.window_should_close() {
+                    threads_should_loop.store(false, Relaxed);
+                    break;
+                }
+
+                // Using the screencap generated on the screen_data thread,
+                // update the game state data for decision making
+                game_state.refresh_game_data(&screen_data);
+
+                // Output the data for the user to view
+                let mut d = rl.begin_drawing(&thread);
+                d.clear_background(Color::BLACK);
+
+                game_state.draw_data(
+                    &mut d,
+                    &thread,
+                    &screen_data,
+                    &ucn_numbers,
+                    10,
+                    Color::WHITE,
+                    Color::GOLD,
+                    Color::RED,
+                );
+
+                // Based upon the game data, perform all actions necessary to return the game to a neutral state
+                game_state.act_on_game_data(&screen_data);
+
+                // sleep(Duration::from_millis(4)); // Already done by raylib's EndDrawing()
             }
         });
-
-        // // Spawn a thread for the Raylib debug window
-        // s.spawn(|| {
-        //     use raylib::prelude::*;
-
-        //     let (mut rl, thread) = init()
-        //         .size(1280, 720)
-        //         .title("TheKingOfFNaF")
-        //         .resizable()
-        //         .build();
-
-        //     while threads_should_loop.load(Relaxed) {
-        //         if rl.window_should_close() {
-        //             threads_should_loop.store(false, Relaxed);
-        //             break;
-        //         }
-
-        //         let mut d = rl.begin_drawing(&thread);
-        //         d.clear_background(Color::BLACK);
-        //     }
-        // });
 
         // Read screen pixels on the current thread so that handles don't risk going on the wrong thread
         while threads_should_loop.load(Relaxed) {
             // Update our internal copy of what the gamescreen looks like so we can sample its pixels
             screen_data.write().unwrap().update_screencap(&mut winh);
             screencap_updated.notify_one();
-            sleep(Duration::from_millis(2));
+            sleep(Duration::from_millis(16));
         }
 
         println!("\nWaiting on worker threads...");
