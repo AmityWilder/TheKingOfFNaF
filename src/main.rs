@@ -3,7 +3,13 @@
 //
 #![allow(dead_code)]
 mod win;
-use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
+use std::{
+    sync::{
+        Arc, OnceLock, RwLock,
+        atomic::{AtomicBool, Ordering::Relaxed},
+    },
+    {thread::sleep, time::Duration},
+};
 
 use win::*;
 
@@ -1081,7 +1087,7 @@ fn office_look_left() {
         "cannot look left/right in cameras"
     );
     simulate_mouse_goto(POINT { x: 8, y: 540 });
-    std::thread::sleep(std::time::Duration::from_millis(5 * MS_PER_DECISEC as u64));
+    sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
 }
 
 /// Assumes we are already in the office
@@ -1091,7 +1097,7 @@ fn office_look_right() {
         "cannot look left/right in cameras"
     );
     simulate_mouse_goto(POINT { x: 1910, y: 540 });
-    std::thread::sleep(std::time::Duration::from_millis(5 * MS_PER_DECISEC as u64));
+    sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1110,7 +1116,7 @@ fn refresh_game_data() {
 
 fn toggle_monitor() {
     simulate_keypress(VirtualKey::CameraToggle);
-    std::thread::sleep(std::time::Duration::from_millis(CAM_RESP_MS as u64));
+    sleep(Duration::from_millis(CAM_RESP_MS as u64));
     update_state();
 }
 
@@ -1135,7 +1141,7 @@ fn ensure_system(system: State) {
 
 fn open_camera_if_closed() {
     ensure_system(State::Camera);
-    std::thread::sleep(std::time::Duration::from_millis(1)); // In case the next step is another button press elsewhere
+    sleep(Duration::from_millis(1)); // In case the next step is another button press elsewhere
 }
 
 // `cam` only used if `state == State::Camera`
@@ -1160,7 +1166,7 @@ fn enter_game_state(state: State, cam: Camera) {
             State::Duct => simulate_mouse_click_at(Button::DuctSystem.pos()),
             State::Vent => simulate_mouse_click_at(Button::VentSystem.pos()),
         }
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        sleep(Duration::from_millis(1));
     }
 }
 
@@ -1181,11 +1187,11 @@ mod action {
             .unwrap()
             .game
             .ventilation_has_been_reset();
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        sleep(Duration::from_millis(10));
     }
 
     pub fn handle_nmbb(winh: &mut WindowsHandles) {
-        std::thread::sleep(std::time::Duration::from_millis(17)); // Wait a little bit to make sure we have time for the screen to change
+        sleep(Duration::from_millis(17)); // Wait a little bit to make sure we have time for the screen to change
         SCREEN_DATA.write().unwrap().update_screencap(winh);
         if is_nmbb_standing() {
             // Double check--NMBB will kill us if we flash him wrongfully
@@ -1247,7 +1253,7 @@ fn act_on_game_data(winh: &mut WindowsHandles) {
         <= (DECISECS_PER_SEC as u16 + (CAM_RESP_MS / MS_PER_DECISEC as u16))
     {
         action::handle_funtime_foxy();
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        sleep(Duration::from_millis(10));
     }
 
     // Lowest priority actions should go down here //
@@ -1273,34 +1279,34 @@ fn main() {
     std::thread::scope(|s| {
         // Spawn a thread for reading the screen pixels
         s.spawn(|| {
-            while threads_should_loop.load(std::sync::atomic::Ordering::Relaxed) {
+            while threads_should_loop.load(Relaxed) {
                 SCREEN_DATA
                     .write()
                     .unwrap()
                     .update_screencap(&mut winh.write().unwrap()); // Update our internal copy of what the gamescreen looks like so we can sample its pixels
-                std::thread::sleep(std::time::Duration::from_millis(2));
+                sleep(Duration::from_millis(2));
             }
         });
 
         // Spawn a thread for acting on that data
         s.spawn(|| {
-            while threads_should_loop.load(std::sync::atomic::Ordering::Relaxed) {
+            while threads_should_loop.load(Relaxed) {
                 refresh_game_data(); // Using the screencap we just generated, update the game data statuses for decision making
                 GAME_STATE.read().unwrap().display_data(); // Output the data for the user to view
                 act_on_game_data(&mut winh.write().unwrap()); // Based upon the game data, perform all actions necessary to return the game to a neutral state
-                std::thread::sleep(std::time::Duration::from_millis(4));
+                sleep(Duration::from_millis(4));
             }
         });
 
         // !! SAFETY !!
         // Make sure that user control override doesn't disable the user from closing the program
-        while threads_should_loop.load(std::sync::atomic::Ordering::Relaxed) {
-            std::thread::sleep(std::time::Duration::from_millis(2)); // Give the user time to provide input
+        while threads_should_loop.load(Relaxed) {
+            sleep(Duration::from_millis(2)); // Give the user time to provide input
 
             if is_key_down(VirtualKey::Esc) {
                 // mask to ignore the "toggled" bit
                 println!("{CLEAR_CONSOLE}\nUser has chosen to reclaim control. Task ended.");
-                threads_should_loop.store(false, std::sync::atomic::Ordering::Relaxed); // This tells the worker threads to stop
+                threads_should_loop.store(false, Relaxed); // This tells the worker threads to stop
                 break;
             }
         }

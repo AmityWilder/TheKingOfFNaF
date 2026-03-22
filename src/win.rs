@@ -1,4 +1,5 @@
 //! windows.h is ew yucky, i dont want it touching the main program
+use std::{mem::size_of, thread::sleep, time::Duration};
 pub use windows::Win32::Foundation::POINT;
 use windows::Win32::{
     Graphics::Gdi::{
@@ -67,7 +68,7 @@ impl WindowsHandles {
 pub const fn bitmap_info(width: i32, height: i32) -> BITMAPINFO {
     BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biSize: size_of::<BITMAPINFOHEADER>() as u32,
             biWidth: width,
             biHeight: -height,
             biPlanes: 1,
@@ -193,20 +194,16 @@ pub fn mouse_input(movement: Option<MouseMovement>, m1: M1State) -> INPUT {
 }
 
 pub fn simulate_keypress(key: VirtualKey) {
-    {
-        let input: INPUT = key_input(key, false);
-        unsafe {
-            SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+    let input: INPUT = key_input(key, false);
+    unsafe {
+        SendInput(&[input], size_of::<INPUT>() as i32);
     }
-    {
-        let input: INPUT = key_input(key, true);
-        unsafe {
-            SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(2));
+    sleep(Duration::from_millis(10));
+    let input: INPUT = key_input(key, true);
+    unsafe {
+        SendInput(&[input], size_of::<INPUT>() as i32);
     }
+    sleep(Duration::from_millis(2));
 }
 
 pub fn get_mouse_pos() -> POINT {
@@ -216,6 +213,7 @@ pub fn get_mouse_pos() -> POINT {
         Err(_) => POINT::default(),
     }
 }
+
 pub fn simulate_mouse_move(p: POINT) {
     let input = mouse_input(
         Some(MouseMovement {
@@ -226,9 +224,10 @@ pub fn simulate_mouse_move(p: POINT) {
         M1State::None,
     );
     unsafe {
-        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        SendInput(&[input], size_of::<INPUT>() as i32);
     }
 }
+
 pub fn simulate_mouse_goto(p: POINT) {
     let input = mouse_input(
         Some(MouseMovement {
@@ -239,25 +238,24 @@ pub fn simulate_mouse_goto(p: POINT) {
         M1State::None,
     );
     unsafe {
-        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        SendInput(&[input], size_of::<INPUT>() as i32);
     }
 }
 
 pub fn simulate_mouse_click() {
-    {
-        let input: INPUT = mouse_input(None, M1State::Press);
-        unsafe {
-            SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+    let input: INPUT = mouse_input(None, M1State::Press);
+    unsafe {
+        SendInput(&[input], size_of::<INPUT>() as i32);
     }
-    {
-        let input: INPUT = mouse_input(None, M1State::Release);
-        unsafe {
-            SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-        }
+
+    sleep(Duration::from_millis(10));
+
+    let input: INPUT = mouse_input(None, M1State::Release);
+    unsafe {
+        SendInput(&[input], size_of::<INPUT>() as i32);
     }
 }
+
 pub fn simulate_mouse_click_at(p: POINT) {
     simulate_mouse_goto(p);
     simulate_mouse_click();
@@ -266,17 +264,17 @@ pub fn simulate_mouse_click_at(p: POINT) {
 pub fn simulate_key_down(key: VirtualKey) {
     let input: INPUT = key_input(key, false);
     unsafe {
-        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        SendInput(&[input], size_of::<INPUT>() as i32);
     }
-    std::thread::sleep(std::time::Duration::from_millis(2));
+    sleep(Duration::from_millis(2));
 }
 
 pub fn simulate_key_up(key: VirtualKey) {
     let input: INPUT = key_input(key, true);
     unsafe {
-        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        SendInput(&[input], size_of::<INPUT>() as i32);
     }
-    std::thread::sleep(std::time::Duration::from_millis(2));
+    sleep(Duration::from_millis(2));
 }
 
 pub fn is_key_down(key: VirtualKey) -> bool {
