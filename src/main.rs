@@ -172,18 +172,18 @@ impl Color {
         ((self.r as u16 + self.g as u16 + self.b as u16) / 3) as u8
     }
 
-    pub const fn red_dev(&self) -> u8 {
-        let dist_from_mean = self.r - self.gray();
+    pub const fn red_dev(&self) -> i32 {
+        let dist_from_mean = self.r as i32 - self.gray() as i32;
         ((dist_from_mean * dist_from_mean) / 3).isqrt()
     }
 
-    pub const fn green_dev(&self) -> u8 {
-        let dist_from_mean = self.g - self.gray();
+    pub const fn green_dev(&self) -> i32 {
+        let dist_from_mean = self.g as i32 - self.gray() as i32;
         ((dist_from_mean * dist_from_mean) / 3).isqrt()
     }
 
-    pub const fn blue_dev(&self) -> u8 {
-        let dist_from_mean = self.b - self.gray();
+    pub const fn blue_dev(&self) -> i32 {
+        let dist_from_mean = self.b as i32 - self.gray() as i32;
         ((dist_from_mean * dist_from_mean) / 3).isqrt()
     }
 
