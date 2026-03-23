@@ -13,16 +13,19 @@
     clippy::expect_used,
     reason = "you had better be certain this won't fail"
 )]
-#![allow(dead_code)]
+// #![allow(dead_code)]
 #![feature(sync_nonpoison, nonpoison_condvar, nonpoison_rwlock)] // Rather than poisoning, I would like the program to simply end when something goes wrong
+#![feature(iter_map_windows)]
 
 use raylib::prelude as rl;
 use std::{
+    collections::LinkedList,
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         nonpoison::{Condvar, RwLock},
     },
-    {thread::sleep, time::Duration},
+    thread::sleep,
+    time::{Duration, Instant},
 };
 use win::*;
 
@@ -223,6 +226,8 @@ impl Default for ClockTime {
 }
 
 impl ClockTime {
+    pub const MAX: u16 = 2700;
+
     pub const fn new(deciseconds: u16) -> Self {
         Self {
             deciseconds,
@@ -517,34 +522,50 @@ impl GameData {
         }
     }
 
-    pub const fn is_ventilation_reset_needed(&self) -> bool {
+    pub fn is_ventilation_reset_needed(&self) -> bool {
         (self.flags & Self::VENTILATION_NEEDS_RESET_FLAG) != 0
     }
-    pub const fn mark_ventilation_has_been_reset(&mut self) {
+    pub fn mark_ventilation_has_been_reset<const N: usize>(
+        &mut self,
+        history: &mut GameStateHistory<N>,
+    ) {
         self.flags &= !Self::VENTILATION_NEEDS_RESET_FLAG;
+        history.push(GameStateDelta::VentilationResetNeeded(false));
     }
-    pub const fn mark_ventilation_needs_reset(&mut self) {
+    pub fn mark_ventilation_needs_reset<const N: usize>(
+        &mut self,
+        history: &mut GameStateHistory<N>,
+    ) {
         self.flags |= Self::VENTILATION_NEEDS_RESET_FLAG;
+        history.push(GameStateDelta::VentilationResetNeeded(true));
     }
 
-    pub const fn is_flashlight_on(&self) -> bool {
+    pub fn is_flashlight_on(&self) -> bool {
         (self.flags & Self::FLASHLIGHT_FLAG) != 0
     }
-    pub const fn mark_flashlight_off(&mut self) {
+    pub fn mark_flashlight_off<const N: usize>(&mut self, history: &mut GameStateHistory<N>) {
         self.flags &= !Self::FLASHLIGHT_FLAG;
+        history.push(GameStateDelta::FlashlightOn(false));
     }
-    pub const fn mark_flashlight_on(&mut self) {
+    pub fn mark_flashlight_on<const N: usize>(&mut self, history: &mut GameStateHistory<N>) {
         self.flags |= Self::FLASHLIGHT_FLAG;
+        history.push(GameStateDelta::FlashlightOn(true));
     }
 
-    pub const fn is_door_closed(&self, door: i32) -> bool {
+    pub fn is_door_closed(&self, door: u8) -> bool {
         (self.flags & Self::DOOR0_CLOSED_FLAG << door) != 0
     }
-    pub const fn mark_door_open(&mut self, door: i32) {
+    pub fn mark_door_open<const N: usize>(&mut self, door: u8, history: &mut GameStateHistory<N>) {
         self.flags &= !(Self::DOOR0_CLOSED_FLAG << door);
+        history.push(GameStateDelta::DoorClosed(door, false));
     }
-    pub const fn mark_door_closed(&mut self, door: i32) {
+    pub fn mark_door_closed<const N: usize>(
+        &mut self,
+        door: u8,
+        history: &mut GameStateHistory<N>,
+    ) {
         self.flags |= Self::DOOR0_CLOSED_FLAG << door;
+        history.push(GameStateDelta::DoorClosed(door, true));
     }
 }
 
@@ -591,17 +612,19 @@ impl StateData {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct GameState {
+#[derive(Debug)]
+struct GameState<const BLOCK_CAP: usize> {
     pub state: StateData,
     pub game: GameData,
+    hist: GameStateHistory<BLOCK_CAP>,
 }
 
-impl GameState {
+impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
     pub const fn new() -> Self {
         Self {
             state: StateData::Office(OfficeData { office_yaw: 0.0 }),
             game: GameData::new(),
+            hist: GameStateHistory::new(),
         }
     }
 
@@ -630,7 +653,7 @@ impl GameState {
         let mut y1 = y;
         let mut x = d.measure_text(time_str, font_size) + font_size;
         if self.game.time.error.iter().any(|e| e.is_some()) {
-            const ERR_STR: &str = "error: unrecognized digit(s)";
+            const ERR_STR: &str = "error: unrecognized digit(s); time has not been updated";
             d.draw_text(ERR_STR, x, y, font_size, err_color);
             x += d.measure_text(ERR_STR, font_size);
         }
@@ -779,13 +802,15 @@ impl GameState {
                     font_size,
                     color,
                 );
+                y += line_space;
             }
 
             StateData::Office(od) => {
+                d.draw_text(&format!("Yaw: {}", od.office_yaw,), 0, y, font_size, color);
+                y += line_space;
                 d.draw_text(
                     &format!(
-                        "Yaw: {}\nNightmare Balloon Boy: {}",
-                        od.office_yaw,
+                        "Nightmare Balloon Boy: {}",
                         if is_nmbb_standing(&screen_data.read()) {
                             "standing"
                         } else {
@@ -797,10 +822,214 @@ impl GameState {
                     font_size,
                     color,
                 );
+                y += line_space;
             }
 
-            _ => d.draw_text("TODO", 0, y, font_size, color),
+            _ => {
+                d.draw_text("TODO", 0, y, font_size, color);
+
+                y += line_space;
+            }
         }
+
+        let num_records = self.hist.len();
+        d.draw_text(
+            &format!(
+                "Recorded: {} ({} blocks {} states)",
+                num_records,
+                num_records / BLOCK_CAP,
+                num_records % BLOCK_CAP
+            ),
+            0,
+            y,
+            font_size,
+            color,
+        );
+        y += line_space;
+
+        if let Some(first) = self.hist.get(0) {
+            let start_time = first.timestamp;
+            // monotonic clock
+            draw_graph(
+                d,
+                self.hist
+                    .iter()
+                    .rev()
+                    .filter_map(|record| match record.change {
+                        GameStateDelta::Time(read_time) => Some((
+                            (record.timestamp - start_time).as_millis() as i32,
+                            read_time as i32,
+                        )),
+                        _ => None,
+                    })
+                    .take(300),
+                0..=300,
+                y..=y + 200,
+                Color::LIGHTBLUE,
+            );
+        }
+    }
+}
+
+fn draw_graph<D, I>(
+    d: &mut D,
+    src: I,
+    dx: std::ops::RangeInclusive<i32>,
+    dy: std::ops::RangeInclusive<i32>,
+    color: rl::Color,
+) -> Option<()>
+where
+    D: rl::RaylibDraw,
+    I: Iterator<Item = (i32, i32)> + Clone,
+{
+    use raylib::prelude::*;
+    use std::num::NonZeroI32;
+
+    let xrange = (dx.start() - dx.end()) as f32;
+    let yrange = (dy.start() - dy.end()) as f32;
+
+    let xmin = *dx.start() as f32;
+    let ymin = *dy.start() as f32;
+
+    let x_it = src.clone().map(|(x, _)| x);
+    let first = x_it.clone().min()?;
+    let last = x_it.max()?;
+    let domain = (last.checked_sub(first)).and_then(NonZeroI32::new)?.get() as f32;
+
+    let y_it = src.clone().map(|(_, y)| y);
+    let lowest = y_it.clone().min()?;
+    let highest = y_it.max()?;
+    let range = (highest.checked_sub(lowest))
+        .and_then(NonZeroI32::new)?
+        .get() as f32;
+
+    let remap = |(x, y): (i32, i32)| -> Vector2 {
+        Vector2::new(
+            xmin - ((x - first) as f32 * xrange) / domain,
+            ymin - ((y - lowest) as f32 * yrange) / range,
+        )
+    };
+
+    for [p1, p2] in src.map_windows::<_, _, 2>(|&item| item) {
+        d.draw_line_v(remap(p1), remap(p2), color);
+    }
+
+    Some(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum GameStateDelta {
+    Time(u16),
+    NextFFShow(u16),
+    State(StateData),
+    VentilationResetNeeded(bool),
+    FlashlightOn(bool),
+    DoorClosed(u8, bool),
+    NMBBStanding(bool),
+    VirtualKeyInput { key: VirtualKey, is_down: bool },
+    VirtualMouseMove { pos: POINT },
+    VirtualMouseButton { input_press: bool },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DeltaRecord {
+    timestamp: Instant,
+    change: GameStateDelta,
+}
+
+impl DeltaRecord {
+    pub fn new(change: GameStateDelta) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            change,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct GameStateHistory<const BLOCK_CAP: usize> {
+    data: LinkedList<Vec<DeltaRecord>>,
+}
+
+impl<const BLOCK_CAP: usize> GameStateHistory<BLOCK_CAP> {
+    pub const fn new() -> Self {
+        Self {
+            data: LinkedList::new(),
+        }
+    }
+
+    pub fn push(&mut self, delta: GameStateDelta) {
+        match self.data.back_mut() {
+            Some(cur_block) if cur_block.len() < BLOCK_CAP => cur_block,
+            _ => self.data.push_back_mut(Vec::with_capacity(BLOCK_CAP)),
+        }
+        .push(DeltaRecord::new(delta));
+    }
+
+    pub fn get(&self, index: usize) -> Option<&DeltaRecord> {
+        let (inter, intra) = (index / BLOCK_CAP, index % BLOCK_CAP);
+        self.data
+            .iter()
+            .nth(inter)
+            .and_then(|block| block.get(intra))
+    }
+
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &DeltaRecord> + Clone {
+        self.data.iter().flatten()
+    }
+
+    pub fn len(&self) -> usize {
+        (self.data.len().saturating_sub(1)) * BLOCK_CAP
+            + self.data.back().map_or(0, |block| block.len())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data
+            .back()
+            .is_none_or(|block| block.is_empty() && self.data.len() == 1)
+    }
+
+    pub fn sim_key_down(&mut self, key: VirtualKey) {
+        self.push(GameStateDelta::VirtualKeyInput { key, is_down: true });
+        simulate_key_down(key);
+    }
+
+    pub fn sim_key_up(&mut self, key: VirtualKey) {
+        self.push(GameStateDelta::VirtualKeyInput {
+            key,
+            is_down: false,
+        });
+        simulate_key_up(key);
+    }
+
+    pub fn sim_key_tap(&mut self, key: VirtualKey) {
+        self.sim_key_down(key);
+        self.sim_key_up(key);
+    }
+
+    pub fn sim_mouse_goto(&mut self, pos: POINT) {
+        self.push(GameStateDelta::VirtualMouseMove { pos });
+        simulate_mouse_goto(pos);
+    }
+
+    pub fn sim_mouse_down(&mut self) {
+        self.push(GameStateDelta::VirtualMouseButton { input_press: true });
+        simulate_mouse_down();
+    }
+
+    pub fn sim_mouse_up(&mut self) {
+        self.push(GameStateDelta::VirtualMouseButton { input_press: false });
+        simulate_mouse_up();
+    }
+
+    pub fn sim_mouse_click(&mut self) {
+        self.sim_mouse_down();
+        self.sim_mouse_up();
+    }
+
+    pub fn sim_mouse_click_at(&mut self, p: POINT) {
+        self.sim_mouse_goto(p);
+        self.sim_mouse_click();
     }
 }
 
@@ -1043,7 +1272,7 @@ impl ScreenData {
     }
 }
 
-impl GameState {
+impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
     pub fn does_ventilation_need_reset(&self, screen_data: &ScreenData) -> bool {
         screen_data
             .pixel_color_at(match self.state() {
@@ -1106,21 +1335,13 @@ impl ScreenData {
     }
 }
 
-/// Returns the position of the maximum value
-fn max_in_array<I: IntoIterator<Item: PartialOrd>>(it: I) -> Option<usize> {
-    let mut it = it.into_iter().enumerate();
-    let (mut max_pos, mut max_val) = it.next()?;
-    for (pos, item) in it {
-        if max_val < item {
-            (max_pos, max_val) = (pos, item);
-        }
-    }
-    Some(max_pos)
-}
-
 impl OfficeData {
     /// For finding the yaw of the office
-    pub fn locate_office_lamp(&mut self, screen_data: &ScreenData) {
+    pub fn locate_office_lamp<const BLOCK_CAP: usize>(
+        &mut self,
+        screen_data: &ScreenData,
+        history: &mut GameStateHistory<BLOCK_CAP>,
+    ) {
         const Y: i32 = 66;
         const THRESHOLD: u8 = 200;
         const START: i32 = 723;
@@ -1130,10 +1351,23 @@ impl OfficeData {
                 // 100% of the samples must be 80% matching. Flickering be damned.
                 if screen_data.test_samples_gray(POINT { x, y: Y }, 255, 20) == 5 {
                     self.office_yaw = (x as f64 - START as f64) / WIDTH as f64;
+                    history.push(GameStateDelta::State(StateData::Office(*self)));
                     break;
                 }
             }
         }
+    }
+
+    /// Assumes we are already in the office
+    pub fn look_left<const BLOCK_CAP: usize>(&mut self, history: &mut GameStateHistory<BLOCK_CAP>) {
+        history.sim_mouse_goto(POINT { x: 8, y: 540 });
+        sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
+    }
+
+    /// Assumes we are already in the office
+    fn look_right<const BLOCK_CAP: usize>(&mut self, history: &mut GameStateHistory<BLOCK_CAP>) {
+        history.sim_mouse_goto(POINT { x: 1910, y: 540 });
+        sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
     }
 }
 
@@ -1154,7 +1388,7 @@ impl std::fmt::Display for UpdateStateError {
 
 impl std::error::Error for UpdateStateError {}
 
-impl GameState {
+impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
     pub fn update_state(&mut self, screen_data: &ScreenData) -> Result<(), UpdateStateError> {
         const THRESHOLD: f64 = 0.99;
         let mut new_state = State::Office;
@@ -1179,7 +1413,7 @@ impl GameState {
         }
 
         // Update the global state
-        self.state = match new_state {
+        let new_state_data = match new_state {
             State::Office => StateData::Office(OfficeData { office_yaw: 0.0 }),
 
             State::Camera => {
@@ -1225,29 +1459,11 @@ impl GameState {
                 audio_lure: POINT::default(),
             }),
         };
+        if self.state != new_state_data {
+            self.state = new_state_data;
+            self.hist.push(GameStateDelta::State(self.state));
+        }
         Ok(())
-    }
-
-    /// Assumes we are already in the office
-    pub fn office_look_left(&mut self) {
-        assert_eq!(
-            self.state(),
-            State::Office,
-            "cannot look left/right in cameras"
-        );
-        simulate_mouse_goto(POINT { x: 8, y: 540 });
-        sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
-    }
-
-    /// Assumes we are already in the office
-    fn office_look_right(&mut self) {
-        assert_eq!(
-            self.state(),
-            State::Office,
-            "cannot look left/right in cameras"
-        );
-        simulate_mouse_goto(POINT { x: 1910, y: 540 });
-        sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1265,12 +1481,14 @@ impl GameState {
             Ok(time) => {
                 self.game.time.update_time(time);
                 self.game.time.error = [None; 4];
+                self.hist.push(GameStateDelta::Time(time));
             }
             Err(e) => self.game.time.error = e,
         }
 
         if self.does_ventilation_need_reset(&screen_data.read()) {
-            self.game.mark_ventilation_needs_reset();
+            self.game.mark_ventilation_needs_reset(&mut self.hist);
+            self.hist.push(GameStateDelta::VentilationResetNeeded(true));
         }
 
         //self.locate_office_lamp(); // Needs work
@@ -1282,7 +1500,7 @@ impl GameState {
         &mut self,
         screen_data: &RwLock<ScreenData>,
     ) -> Result<(), UpdateStateError> {
-        simulate_keypress(VirtualKey::CameraToggle);
+        self.hist.sim_key_tap(VirtualKey::CameraToggle);
         sleep(Duration::from_millis(CAM_RESP_MS as u64));
         self.update_state(&screen_data.read())
     }
@@ -1316,12 +1534,12 @@ impl GameState {
                     if let StateData::Camera(cd) = &mut self.state
                         && cd.camera != cam
                     {
-                        simulate_mouse_click_at(Button::from(cam).pos());
+                        self.hist.sim_mouse_click_at(Button::from(cam).pos());
                     }
                 }
 
-                State::Duct => simulate_mouse_click_at(Button::DuctSystem.pos()),
-                State::Vent => simulate_mouse_click_at(Button::VentSystem.pos()),
+                State::Duct => self.hist.sim_mouse_click_at(Button::DuctSystem.pos()),
+                State::Vent => self.hist.sim_mouse_click_at(Button::VentSystem.pos()),
             }
             sleep(Duration::from_millis(1));
         }
@@ -1338,10 +1556,11 @@ impl GameState {
     ) -> Result<(), UpdateStateError> {
         self.open_monitor_if_closed(screen_data)?;
         if self.state() != State::Camera {
-            simulate_mouse_click_at(Button::from(State::Camera).pos());
+            self.hist
+                .sim_mouse_click_at(Button::from(State::Camera).pos());
         }
         sleep(Duration::from_millis(1));
-        simulate_mouse_click_at(Button::Cam06.pos());
+        self.hist.sim_mouse_click_at(Button::Cam06.pos());
         Ok(())
     }
 
@@ -1350,19 +1569,19 @@ impl GameState {
         screen_data: &RwLock<ScreenData>,
     ) -> Result<(), UpdateStateError> {
         self.open_monitor_if_closed(screen_data)?; // We don't need to care which system, only that the monitor is up.
-        simulate_mouse_click_at(Button::ResetVent.pos());
-        self.game.mark_ventilation_has_been_reset();
+        self.hist.sim_mouse_click_at(Button::ResetVent.pos());
+        self.game.mark_ventilation_has_been_reset(&mut self.hist);
         sleep(Duration::from_millis(10));
         Ok(())
     }
 
-    pub fn handle_nmbb(&self, screen_data: &RwLock<ScreenData>) {
+    pub fn handle_nmbb(&mut self, screen_data: &RwLock<ScreenData>) {
         sleep(Duration::from_millis(17)); // Wait a little bit to make sure we have time for the screen to change
         // TODO: Wait for next screencap update
         if is_nmbb_standing(&screen_data.read()) {
             // Double check--NMBB will kill us if we flash him wrongfully
             // If he is in fact still up, flash the light on him to put him back down
-            simulate_keypress(VirtualKey::Flashlight);
+            self.hist.sim_key_tap(VirtualKey::Flashlight);
         }
     }
 
@@ -1470,9 +1689,9 @@ fn main() {
                 use raylib::prelude::*;
 
                 // All the information we have about the state of the game
-                let mut game_state = GameState::new();
+                let mut game_state = GameState::<1024>::new();
                 let (mut rl, thread) = init()
-                    .size(740, 260)
+                    .size(880, 260)
                     .title("TheKingOfFNaF")
                     .resizable()
                     .build();
@@ -1558,7 +1777,7 @@ fn main() {
                 threads_should_loop.store(false, Relaxed);
                 return;
             }
-            screencap_updated.notify_one();
+            screencap_updated.notify_all();
             sleep(Duration::from_millis(16));
         }
 

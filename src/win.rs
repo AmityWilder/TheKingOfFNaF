@@ -242,7 +242,7 @@ pub fn simulate_key_up(key: VirtualKey) {
     sleep(Duration::from_millis(2));
 }
 
-pub fn simulate_keypress(key: VirtualKey) {
+pub fn simulate_key_tap(key: VirtualKey) {
     simulate_key_down(key);
     simulate_key_up(key);
 }
