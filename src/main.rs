@@ -14,15 +14,16 @@
     reason = "you had better be certain this won't fail"
 )]
 // #![allow(dead_code)]
-#![feature(sync_nonpoison, nonpoison_condvar, nonpoison_rwlock)] // Rather than poisoning, I would like the program to simply end when something goes wrong
+#![feature(sync_nonpoison, nonpoison_condvar, nonpoison_rwlock, nonpoison_mutex)] // Rather than poisoning, I would like the program to simply end when something goes wrong
 #![feature(iter_map_windows)]
 
 use raylib::prelude as rl;
 use std::{
     collections::LinkedList,
     sync::{
+        Arc,
         atomic::{AtomicBool, Ordering::Relaxed},
-        nonpoison::{Condvar, RwLock},
+        nonpoison::{Condvar, Mutex, RwLock},
     },
     thread::sleep,
     time::{Duration, Instant},
@@ -617,17 +618,19 @@ impl StateData {
 struct GameState<const BLOCK_CAP: usize> {
     pub state: StateData,
     pub game: GameData,
+    screen_data: Arc<ScreenDataPair>,
     hist: GameStateHistory<BLOCK_CAP>,
 }
 
 impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
-    pub const fn new() -> Self {
+    pub fn new(screencap_updated: Arc<ScreenDataPair>) -> Self {
         Self {
             state: StateData::Office(OfficeData {
                 office_yaw: 0.0,
                 is_nmbb_standing: false,
             }),
             game: GameData::new(),
+            screen_data: screencap_updated,
             hist: GameStateHistory::new(),
         }
     }
@@ -852,31 +855,88 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
 
         if let Some(first) = self.hist.get(0) {
             let start_time = first.timestamp;
+
             // monotonic clock
-            draw_graph(
+            draw_graph_slice(
                 d,
-                self.hist
-                    .iter()
-                    .filter_map(|record| match record.change {
-                        GameStateDelta::Time(read_time) => Some((
-                            (record.timestamp - start_time).as_millis() as i32,
-                            read_time as i32,
-                        )),
-                        _ => None,
-                    })
-                    .skip(
-                        self.hist
-                            .iter()
-                            .filter(|record| matches!(record.change, GameStateDelta::Time(_)))
-                            .count()
-                            .saturating_sub(300),
-                    ),
+                self.hist.iter().filter_map(|record| match record.change {
+                    GameStateDelta::Time(read_time) => Some((record.timestamp, read_time as i32)),
+                    _ => None,
+                }),
+                start_time,
+                300,
                 0..=300,
                 y..=y + 200,
                 Color::LIGHTBLUE,
             );
+
+            // state
+            draw_graph_slice(
+                d,
+                self.hist.iter().filter_map(|record| match record.change {
+                    GameStateDelta::State(value) => Some((record.timestamp, value as i32)),
+                    _ => None,
+                }),
+                start_time,
+                300,
+                0..=300,
+                y..=y + 200,
+                Color::BLUEVIOLET,
+            );
+
+            // nmbb status
+            draw_graph_slice(
+                d,
+                self.hist.iter().filter_map(|record| match record.change {
+                    GameStateDelta::NMBBStanding(value) => Some((record.timestamp, value as i32)),
+                    _ => None,
+                }),
+                start_time,
+                300,
+                0..=300,
+                y..=y + 200,
+                Color::TOMATO,
+            );
+
+            // state
+            draw_graph_slice(
+                d,
+                self.hist.iter().filter_map(|record| match record.change {
+                    GameStateDelta::FlashlightOn(is_on) => Some((record.timestamp, is_on as i32)),
+                    _ => None,
+                }),
+                start_time,
+                300,
+                0..=300,
+                y..=y + 200,
+                Color::YELLOW,
+            );
         }
     }
+}
+
+fn draw_graph_slice<D, I>(
+    d: &mut D,
+    src: I,
+    start_time: Instant,
+    last_n: usize,
+    dx: std::ops::RangeInclusive<i32>,
+    dy: std::ops::RangeInclusive<i32>,
+    color: rl::Color,
+) -> Option<()>
+where
+    D: rl::RaylibDraw,
+    I: Iterator<Item = (Instant, i32)> + Clone,
+{
+    let skip_n = src.clone().count().saturating_sub(last_n);
+    draw_graph(
+        d,
+        src.skip(skip_n)
+            .map(|(timestamp, y)| ((timestamp - start_time).as_millis() as i32, y)),
+        dx,
+        dy,
+        color,
+    )
 }
 
 fn draw_graph<D, I>(
@@ -919,7 +979,9 @@ where
     };
 
     for [p1, p2] in src.map_windows::<_, _, 2>(|&item| item) {
-        d.draw_line_v(remap(p1), remap(p2), color);
+        let p1 = remap(p1);
+        let p2 = remap(p2);
+        d.draw_line_strip(&[p1, Vector2::new(p1.x, p2.y), p2], color);
     }
 
     Some(())
@@ -1386,17 +1448,17 @@ impl OfficeData {
 
     pub fn handle_nmbb<const BLOCK_CAP: usize>(
         &mut self,
-        screen_data: &RwLock<ScreenData>,
+        screen_data: &Arc<ScreenDataPair>,
         history: &mut GameStateHistory<BLOCK_CAP>,
     ) {
-        self.is_nmbb_standing = screen_data.read().is_nmbb_standing();
+        // Double check--NMBB will kill us if we flash him wrongfully
+        // If he is in fact still up, flash the light on him to put him back down
+        self.is_nmbb_standing = screen_data.buffer.lock().is_nmbb_standing();
         history.push(GameStateDelta::IsNmbbStanding(self.is_nmbb_standing));
         if self.is_nmbb_standing {
-            // Double check--NMBB will kill us if we flash him wrongfully
-            // If he is in fact still up, flash the light on him to put him back down
             history.sim_key_tap(VirtualKey::Flashlight);
-            sleep(Duration::from_millis(2)); // TODO: Wait for next screencap update
-            self.is_nmbb_standing = screen_data.read().is_nmbb_standing();
+            screen_data.wait_for_update();
+            self.is_nmbb_standing = screen_data.buffer.lock().is_nmbb_standing();
             history.push(GameStateDelta::IsNmbbStanding(self.is_nmbb_standing));
         }
     }
@@ -1420,9 +1482,10 @@ impl std::fmt::Display for UpdateStateError {
 impl std::error::Error for UpdateStateError {}
 
 impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
-    pub fn update_state(&mut self, screen_data: &ScreenData) -> Result<(), UpdateStateError> {
+    pub fn update_state(&mut self) -> Result<(), UpdateStateError> {
         const THRESHOLD: f64 = 0.99;
         let mut new_state = State::Office;
+        let screen_data = self.screen_data.buffer.lock();
         // List of how many samples returned as matches for each of the buttons being tested
         if let Some((tested_state, _)) = [State::Camera, State::Vent, State::Duct]
             .into_iter()
@@ -1518,13 +1581,10 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
     ///////////////////////////////////////////////////////////////////////////
 
     /// Updates all known game information
-    pub fn refresh_game_data(
-        &mut self,
-        screen_data: &RwLock<ScreenData>,
-    ) -> Result<(), UpdateStateError> {
-        self.update_state(&screen_data.read())?;
+    pub fn refresh_game_data(&mut self) -> Result<(), UpdateStateError> {
+        self.update_state()?;
 
-        match screen_data.read().read_game_clock() {
+        match self.screen_data.buffer.lock().read_game_clock() {
             Ok(time) => {
                 self.game.time.update_time(time);
                 self.game.time.error = [None; 4];
@@ -1533,12 +1593,12 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
             Err(e) => self.game.time.error = e,
         }
 
-        if self.does_ventilation_need_reset(&screen_data.read()) {
+        if self.does_ventilation_need_reset(&self.screen_data.buffer.lock()) {
             self.game.mark_ventilation_needs_reset(&mut self.hist);
         }
 
         if let StateData::Office(od) = &mut self.state {
-            od.is_nmbb_standing = screen_data.read().is_nmbb_standing();
+            od.is_nmbb_standing = self.screen_data.buffer.lock().is_nmbb_standing();
             self.hist
                 .push(GameStateDelta::NMBBStanding(od.is_nmbb_standing));
         }
@@ -1548,21 +1608,15 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
         Ok(())
     }
 
-    pub fn toggle_monitor(
-        &mut self,
-        screen_data: &RwLock<ScreenData>,
-    ) -> Result<(), UpdateStateError> {
+    pub fn toggle_monitor(&mut self) -> Result<(), UpdateStateError> {
         self.hist.sim_key_tap(VirtualKey::CameraToggle);
         sleep(Duration::from_millis(CAM_RESP_MS as u64));
-        self.update_state(&screen_data.read())
+        self.update_state()
     }
 
-    pub fn open_monitor_if_closed(
-        &mut self,
-        screen_data: &RwLock<ScreenData>,
-    ) -> Result<(), UpdateStateError> {
+    pub fn open_monitor_if_closed(&mut self) -> Result<(), UpdateStateError> {
         if self.state() == State::Office {
-            self.toggle_monitor(screen_data)?;
+            self.toggle_monitor()?;
         }
         Ok(())
     }
@@ -1572,12 +1626,11 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
         &mut self,
         new_state: State,
         cam: Camera,
-        screen_data: &RwLock<ScreenData>,
     ) -> Result<(), UpdateStateError> {
         let current_state = self.state();
         if current_state != new_state {
             if (current_state == State::Office) != (new_state == State::Office) {
-                self.toggle_monitor(screen_data)?;
+                self.toggle_monitor()?;
             }
             match new_state {
                 State::Office => {}
@@ -1602,11 +1655,8 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
     // Playbook of actions
     //
 
-    pub fn handle_funtime_foxy(
-        &mut self,
-        screen_data: &RwLock<ScreenData>,
-    ) -> Result<(), UpdateStateError> {
-        self.open_monitor_if_closed(screen_data)?;
+    pub fn handle_funtime_foxy(&mut self) -> Result<(), UpdateStateError> {
+        self.open_monitor_if_closed()?;
         if self.state() != State::Camera {
             self.hist
                 .sim_mouse_click_at(Button::from(State::Camera).pos());
@@ -1616,21 +1666,15 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
         Ok(())
     }
 
-    pub fn reset_vents(
-        &mut self,
-        screen_data: &RwLock<ScreenData>,
-    ) -> Result<(), UpdateStateError> {
-        self.open_monitor_if_closed(screen_data)?; // We don't need to care which system, only that the monitor is up.
+    pub fn reset_vents(&mut self) -> Result<(), UpdateStateError> {
+        self.open_monitor_if_closed()?; // We don't need to care which system, only that the monitor is up.
         self.hist.sim_mouse_click_at(Button::ResetVent.pos());
         self.game.mark_ventilation_has_been_reset(&mut self.hist);
         sleep(Duration::from_millis(10));
         Ok(())
     }
 
-    pub fn act_on_game_data(
-        &mut self,
-        screen_data: &RwLock<ScreenData>,
-    ) -> Result<(), UpdateStateError> {
+    pub fn act_on_game_data(&mut self) -> Result<(), UpdateStateError> {
         /**************************************************************************************************
          * Definitions
          * ===========
@@ -1662,18 +1706,18 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
         if let StateData::Office(od) = &mut self.state
             && od.is_nmbb_standing
         {
-            od.handle_nmbb(screen_data, &mut self.hist);
+            od.handle_nmbb(&self.screen_data, &mut self.hist);
         }
 
         if self.game.is_ventilation_reset_needed() {
-            self.reset_vents(screen_data)?;
+            self.reset_vents()?;
         }
 
         // We have <= 1 seconds before the next hour
         if (DECISECS_PER_HOUR - self.game.time.deciseconds_since_hour())
             <= (DECISECS_PER_SEC as u16 + (CAM_RESP_MS / MS_PER_DECISEC as u16))
         {
-            self.handle_funtime_foxy(screen_data)?;
+            self.handle_funtime_foxy()?;
             sleep(Duration::from_millis(10));
         }
 
@@ -1683,22 +1727,44 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
     }
 }
 
+#[derive(Debug)]
+struct ScreenDataPair {
+    pub buffer: Mutex<ScreenData>,
+    pub counter: Mutex<usize>,
+    pub updated: Condvar,
+}
+
+impl ScreenDataPair {
+    fn mark_updated(&self) {
+        let mut counter = self.counter.lock();
+        *counter = counter.wrapping_add(1);
+        self.updated.notify_all();
+    }
+
+    fn wait_for_update(&self) {
+        let mut counter = self.counter.lock();
+        let current_counter = *counter;
+        self.updated
+            .wait_while(&mut counter, move |&mut pending| pending != current_counter);
+    }
+}
+
 fn main() {
     let mut winh = WindowsHandles::new();
 
-    let screencap_updated: Condvar = Condvar::new();
-    let screen_data: RwLock<ScreenData> =
-        RwLock::new(ScreenData::new(Vec::new(), winh.screen_width));
+    let screen_data = Arc::new(ScreenDataPair {
+        buffer: Mutex::new(ScreenData::new(
+            vec![0; CHANNELS_PER_COLOR * winh.screen_width as usize * winh.screen_height as usize],
+            winh.screen_width,
+        )),
+        counter: Mutex::new(0),
+        updated: Condvar::new(),
+    });
 
-    screen_data.write().data.resize(
-        CHANNELS_PER_COLOR * winh.screen_width as usize * winh.screen_height as usize,
-        0,
-    );
-
-    let threads_should_loop: AtomicBool = AtomicBool::new(true);
+    let threads_should_loop = AtomicBool::new(true);
 
     std::thread::scope(|s| {
-        if let Err(e) = screen_data.write().update_screencap(&mut winh) {
+        if let Err(e) = screen_data.buffer.lock().update_screencap(&mut winh) {
             eprintln!("failed to update screencap for first time: {e}");
             threads_should_loop.store(false, Relaxed);
             return;
@@ -1733,7 +1799,7 @@ fn main() {
                 use raylib::prelude::*;
 
                 // All the information we have about the state of the game
-                let mut game_state = GameState::<1024>::new();
+                let mut game_state = GameState::<1024>::new(Arc::clone(&screen_data));
                 let (mut rl, thread) = init()
                     .size(880, 560)
                     .title("TheKingOfFNaF")
@@ -1777,7 +1843,7 @@ fn main() {
                     if !is_paused {
                         // Using the screencap generated on the screen_data thread,
                         // update the game state data for decision making
-                        if let Err(e) = game_state.refresh_game_data(&screen_data) {
+                        if let Err(e) = game_state.refresh_game_data() {
                             eprintln!("failed to update game state: {e}");
                         }
                     }
@@ -1797,7 +1863,7 @@ fn main() {
 
                     if !is_paused {
                         // Based upon the game data, perform all actions necessary to return the game to a neutral state
-                        if let Err(e) = game_state.act_on_game_data(&screen_data) {
+                        if let Err(e) = game_state.act_on_game_data() {
                             eprintln!("failed to update game state: {e}");
                         }
                     }
@@ -1815,12 +1881,12 @@ fn main() {
         // Read screen pixels on the current thread so that handles don't risk going on the wrong thread
         while threads_should_loop.load(Relaxed) {
             // Update our internal copy of what the gamescreen looks like so we can sample its pixels
-            if let Err(e) = screen_data.write().update_screencap(&mut winh) {
+            if let Err(e) = screen_data.buffer.lock().update_screencap(&mut winh) {
                 eprintln!("failed to update screencap: {e}");
                 threads_should_loop.store(false, Relaxed);
                 return;
             }
-            screencap_updated.notify_all();
+            screen_data.mark_updated();
             sleep(Duration::from_millis(16));
         }
 
