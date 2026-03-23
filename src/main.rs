@@ -641,7 +641,6 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
         &self,
         d: &mut rl::RaylibDrawHandle,
         _thread: &rl::RaylibThread,
-        screen_data: &RwLock<ScreenData>,
         ucn_numbers: &rl::Texture2D,
         font_size: i32,
         color: rl::Color,
@@ -815,7 +814,7 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
                 d.draw_text(
                     &format!(
                         "Nightmare Balloon Boy: {}",
-                        if is_nmbb_standing(&screen_data.read()) {
+                        if od.is_nmbb_standing {
                             "standing"
                         } else {
                             "sitting"
@@ -1192,17 +1191,6 @@ impl Button {
 // This is where the input we've taken from the game gets turned into useful data //
 ////////////////////////////////////////////////////////////////////////////////////
 
-fn is_nmbb_standing(screen_data: &ScreenData) -> bool {
-    const PANTS_COLOR: ColorRGB = ColorRGB {
-        r: 0,
-        g: 28,
-        b: 120,
-    };
-    const SAMPLE_POS: POINT = POINT { x: 1024, y: 774 };
-    const THRESHOLD: f64 = 0.98;
-    PANTS_COLOR.similarity(screen_data.pixel_color_at(SAMPLE_POS)) > THRESHOLD
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ReadNumberError {
     UnknownSequence { flags: u8 },
@@ -1284,6 +1272,17 @@ impl ScreenData {
         } else {
             Err([minute, tens_of_seconds, seconds, deciseconds].map(|res| res.err()))
         }
+    }
+
+    fn is_nmbb_standing(&self) -> bool {
+        const PANTS_COLOR: ColorRGB = ColorRGB {
+            r: 0,
+            g: 28,
+            b: 120,
+        };
+        const SAMPLE_POS: POINT = POINT { x: 1024, y: 774 };
+        const THRESHOLD: f64 = 0.98;
+        PANTS_COLOR.similarity(self.pixel_color_at(SAMPLE_POS)) > THRESHOLD
     }
 }
 
@@ -1383,6 +1382,23 @@ impl OfficeData {
     fn look_right<const BLOCK_CAP: usize>(&mut self, history: &mut GameStateHistory<BLOCK_CAP>) {
         history.sim_mouse_goto(POINT { x: 1910, y: 540 });
         sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
+    }
+
+    pub fn handle_nmbb<const BLOCK_CAP: usize>(
+        &mut self,
+        screen_data: &RwLock<ScreenData>,
+        history: &mut GameStateHistory<BLOCK_CAP>,
+    ) {
+        self.is_nmbb_standing = screen_data.read().is_nmbb_standing();
+        history.push(GameStateDelta::IsNmbbStanding(self.is_nmbb_standing));
+        if self.is_nmbb_standing {
+            // Double check--NMBB will kill us if we flash him wrongfully
+            // If he is in fact still up, flash the light on him to put him back down
+            history.sim_key_tap(VirtualKey::Flashlight);
+            sleep(Duration::from_millis(2)); // TODO: Wait for next screencap update
+            self.is_nmbb_standing = screen_data.read().is_nmbb_standing();
+            history.push(GameStateDelta::IsNmbbStanding(self.is_nmbb_standing));
+        }
     }
 }
 
@@ -1519,7 +1535,12 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
 
         if self.does_ventilation_need_reset(&screen_data.read()) {
             self.game.mark_ventilation_needs_reset(&mut self.hist);
-            self.hist.push(GameStateDelta::VentilationResetNeeded(true));
+        }
+
+        if let StateData::Office(od) = &mut self.state {
+            od.is_nmbb_standing = screen_data.read().is_nmbb_standing();
+            self.hist
+                .push(GameStateDelta::NMBBStanding(od.is_nmbb_standing));
         }
 
         //self.locate_office_lamp(); // Needs work
@@ -1606,16 +1627,6 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
         Ok(())
     }
 
-    pub fn handle_nmbb(&mut self, screen_data: &RwLock<ScreenData>) {
-        sleep(Duration::from_millis(17)); // Wait a little bit to make sure we have time for the screen to change
-        // TODO: Wait for next screencap update
-        if is_nmbb_standing(&screen_data.read()) {
-            // Double check--NMBB will kill us if we flash him wrongfully
-            // If he is in fact still up, flash the light on him to put him back down
-            self.hist.sim_key_tap(VirtualKey::Flashlight);
-        }
-    }
-
     pub fn act_on_game_data(
         &mut self,
         screen_data: &RwLock<ScreenData>,
@@ -1648,8 +1659,10 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
          *   Thankfully these events are usually either very short in duration or can be handled by rote.
          **************************************************************************************************/
 
-        if self.state() == State::Office && is_nmbb_standing(&screen_data.read()) {
-            self.handle_nmbb(screen_data);
+        if let StateData::Office(od) = &mut self.state
+            && od.is_nmbb_standing
+        {
+            od.handle_nmbb(screen_data, &mut self.hist);
         }
 
         if self.game.is_ventilation_reset_needed() {
@@ -1722,7 +1735,7 @@ fn main() {
                 // All the information we have about the state of the game
                 let mut game_state = GameState::<1024>::new();
                 let (mut rl, thread) = init()
-                    .size(880, 260)
+                    .size(880, 560)
                     .title("TheKingOfFNaF")
                     .resizable()
                     .build();
@@ -1776,7 +1789,6 @@ fn main() {
                     game_state.draw_data(
                         &mut d,
                         &thread,
-                        &screen_data,
                         &ucn_numbers,
                         10,
                         Color::WHITE,
