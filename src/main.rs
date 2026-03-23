@@ -386,6 +386,7 @@ impl std::fmt::Display for Duct {
 struct OfficeData {
     /// How far left/right we are looking [-1,1]
     pub office_yaw: f64,
+    pub is_nmbb_standing: bool,
 }
 
 impl OfficeData {
@@ -622,7 +623,10 @@ struct GameState<const BLOCK_CAP: usize> {
 impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
     pub const fn new() -> Self {
         Self {
-            state: StateData::Office(OfficeData { office_yaw: 0.0 }),
+            state: StateData::Office(OfficeData {
+                office_yaw: 0.0,
+                is_nmbb_standing: false,
+            }),
             game: GameData::new(),
             hist: GameStateHistory::new(),
         }
@@ -854,7 +858,6 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
                 d,
                 self.hist
                     .iter()
-                    .rev()
                     .filter_map(|record| match record.change {
                         GameStateDelta::Time(read_time) => Some((
                             (record.timestamp - start_time).as_millis() as i32,
@@ -862,7 +865,13 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
                         )),
                         _ => None,
                     })
-                    .take(300),
+                    .skip(
+                        self.hist
+                            .iter()
+                            .filter(|record| matches!(record.change, GameStateDelta::Time(_)))
+                            .count()
+                            .saturating_sub(300),
+                    ),
                 0..=300,
                 y..=y + 200,
                 Color::LIGHTBLUE,
@@ -885,11 +894,11 @@ where
     use raylib::prelude::*;
     use std::num::NonZeroI32;
 
-    let xrange = (dx.start() - dx.end()) as f32;
-    let yrange = (dy.start() - dy.end()) as f32;
+    let xrange = (dx.end() - dx.start()) as f32;
+    let yrange = (dy.end() - dy.start()) as f32;
 
     let xmin = *dx.start() as f32;
-    let ymin = *dy.start() as f32;
+    let ymax = *dy.end() as f32;
 
     let x_it = src.clone().map(|(x, _)| x);
     let first = x_it.clone().min()?;
@@ -905,8 +914,8 @@ where
 
     let remap = |(x, y): (i32, i32)| -> Vector2 {
         Vector2::new(
-            xmin - ((x - first) as f32 * xrange) / domain,
-            ymin - ((y - lowest) as f32 * yrange) / range,
+            xmin + ((x - first) as f32 * xrange) / domain,
+            ymax - ((y - lowest) as f32 * yrange) / range,
         )
     };
 
@@ -920,8 +929,14 @@ where
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum GameStateDelta {
     Time(u16),
+    State(State),
     NextFFShow(u16),
-    State(StateData),
+    OfficeYaw(f64),
+    IsNmbbStanding(bool),
+    Camera(Camera),
+    VentSnare(Vent),
+    ClosedDuct(Duct),
+    AudioLure(POINT),
     VentilationResetNeeded(bool),
     FlashlightOn(bool),
     DoorClosed(u8, bool),
@@ -1351,7 +1366,7 @@ impl OfficeData {
                 // 100% of the samples must be 80% matching. Flickering be damned.
                 if screen_data.test_samples_gray(POINT { x, y: Y }, 255, 20) == 5 {
                     self.office_yaw = (x as f64 - START as f64) / WIDTH as f64;
-                    history.push(GameStateDelta::State(StateData::Office(*self)));
+                    history.push(GameStateDelta::OfficeYaw(self.office_yaw));
                     break;
                 }
             }
@@ -1412,57 +1427,73 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
             new_state = tested_state;
         }
 
-        // Update the global state
-        let new_state_data = match new_state {
-            State::Office => StateData::Office(OfficeData { office_yaw: 0.0 }),
+        let state_changing = self.state() != new_state;
+        if state_changing {
+            self.hist.push(GameStateDelta::State(new_state));
 
-            State::Camera => {
-                const CAMERAS: [Camera; 8] = [
-                    Camera::WestHall,
-                    Camera::EastHall,
-                    Camera::Closet,
-                    Camera::Kitchen,
-                    Camera::PirateCove,
-                    Camera::ShowtimeStage,
-                    Camera::PrizeCounter,
-                    Camera::PartsAndServices,
-                ];
-                // If we've confirmed the state then there should be no doubt we can identify the camera
-                if let Some((camera, _)) = CAMERAS
-                    .into_iter()
-                    .map(|camera| {
-                        (
-                            camera,
-                            screen_data.test_samples(
-                                Button::from(camera).pos(),
-                                *clr::CAM_BTN_COLOR_NRM,
-                                THRESHOLD,
-                            ),
-                        )
-                    })
-                    .max_by_key(|(_, x)| *x)
-                    // We must have every sample returning as a match to avoid false positives
-                    .filter(|(_, matching_samples)| *matching_samples >= 5)
-                {
-                    StateData::Camera(CameraData { camera })
-                } else {
-                    return Err(UpdateStateError::NoMatchingCameraInCameraState);
+            // Update the global state
+            self.state = match new_state {
+                State::Office => {
+                    let od = OfficeData {
+                        office_yaw: 0.0,
+                        is_nmbb_standing: false,
+                    };
+                    StateData::Office(od)
                 }
-            }
 
-            State::Vent => StateData::Vent(VentData {
-                vent_snare: Vent::default(),
-            }),
+                State::Camera => StateData::Camera(CameraData {
+                    camera: Camera::WestHall,
+                }),
 
-            State::Duct => StateData::Duct(DuctData {
-                closed_duct: Duct::West,
-                audio_lure: POINT::default(),
-            }),
-        };
-        if self.state != new_state_data {
-            self.state = new_state_data;
-            self.hist.push(GameStateDelta::State(self.state));
+                State::Vent => StateData::Vent(VentData {
+                    vent_snare: Vent::default(),
+                }),
+
+                State::Duct => StateData::Duct(DuctData {
+                    closed_duct: Duct::West,
+                    audio_lure: POINT::default(),
+                }),
+            };
         }
+
+        // Update camera
+        if let StateData::Camera(cd) = &mut self.state {
+            const CAMERAS: [Camera; 8] = [
+                Camera::WestHall,
+                Camera::EastHall,
+                Camera::Closet,
+                Camera::Kitchen,
+                Camera::PirateCove,
+                Camera::ShowtimeStage,
+                Camera::PrizeCounter,
+                Camera::PartsAndServices,
+            ];
+            // If we've confirmed the state then there should be no doubt we can identify the camera
+            if let Some((camera, _)) = CAMERAS
+                .into_iter()
+                .map(|camera| {
+                    (
+                        camera,
+                        screen_data.test_samples(
+                            Button::from(camera).pos(),
+                            *clr::CAM_BTN_COLOR_NRM,
+                            THRESHOLD,
+                        ),
+                    )
+                })
+                .max_by_key(|(_, x)| *x)
+                // We must have every sample returning as a match to avoid false positives
+                .filter(|(_, matching_samples)| *matching_samples >= 5)
+            {
+                if state_changing || cd.camera != camera {
+                    self.hist.push(GameStateDelta::Camera(camera));
+                    *cd = CameraData { camera };
+                }
+            } else {
+                return Err(UpdateStateError::NoMatchingCameraInCameraState);
+            }
+        }
+
         Ok(())
     }
 
