@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 raylib = "5.5.1"
+
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Graphics_Gdi",
     "Win32_UI_Input_KeyboardAndMouse",

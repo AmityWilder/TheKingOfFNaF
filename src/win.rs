@@ -6,32 +6,30 @@
 )] // TODO: change this to deny once windows.h safety has been cleared up
 
 use std::{mem::size_of, thread::sleep, time::Duration};
-use windows::Win32::{
-    Graphics::Gdi::{
-        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
-        DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, HBITMAP, HDC, HGDIOBJ, RGBQUAD,
-        ReleaseDC, SRCCOPY, SelectObject,
-    },
-    UI::{
-        Input::KeyboardAndMouse::{
-            GetAsyncKeyState, INPUT, INPUT_KEYBOARD, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
-            MOUSEEVENTF_LEFTUP, SendInput,
-        },
-        WindowsAndMessaging::{
-            GetCursorPos, GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-        },
-    },
-};
-pub use windows::{Win32::Foundation::POINT, core::Result as WindowsResult};
+
+#[cfg(windows)]
+mod wrapper_windows;
+#[cfg(not(windows))]
+mod wrapper_nonwindows;
+
+#[cfg(windows)]
+use wrapper_windows::*;
+#[cfg(not(windows))]
+use wrapper_nonwindows::*;
+
+#[cfg(windows)]
+pub use wrapper_windows::{POINT, Result as WindowsResult};
+#[cfg(not(windows))]
+pub use wrapper_nonwindows::{POINT, Result as WindowsResult};
 
 #[derive(Debug)]
 pub struct WindowsHandles {
     /// get the desktop device context
-    pub desktop_hdc: HDC,
+    desktop_hdc: HDC,
     /// create a device context to use ourselves
-    pub internal_hdc: HDC,
+    internal_hdc: HDC,
     /// create a bitmap
-    pub bitmap: HBITMAP,
+    bitmap: HBITMAP,
 
     pub screen_width: i32,
     pub screen_height: i32,
@@ -164,9 +162,6 @@ impl VirtualKey {
 }
 
 pub const fn key_input(key: VirtualKey, key_up: bool) -> INPUT {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        INPUT_0, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
-    };
     INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
@@ -206,9 +201,6 @@ pub struct MouseMovement {
 }
 
 pub fn mouse_input(movement: Option<MouseMovement>, m1: M1State) -> INPUT {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_MOVE, MOUSEINPUT,
-    };
     INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
