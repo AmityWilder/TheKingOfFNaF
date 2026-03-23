@@ -864,7 +864,7 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
                     _ => None,
                 }),
                 start_time,
-                300,
+                Duration::from_secs(5),
                 0..=300,
                 y..=y + 200,
                 Color::LIGHTBLUE,
@@ -878,7 +878,7 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
                     _ => None,
                 }),
                 start_time,
-                300,
+                Duration::from_secs(5),
                 0..=300,
                 y..=y + 200,
                 Color::BLUEVIOLET,
@@ -892,7 +892,7 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
                     _ => None,
                 }),
                 start_time,
-                300,
+                Duration::from_secs(5),
                 0..=300,
                 y..=y + 200,
                 Color::TOMATO,
@@ -906,7 +906,7 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
                     _ => None,
                 }),
                 start_time,
-                300,
+                Duration::from_secs(5),
                 0..=300,
                 y..=y + 200,
                 Color::YELLOW,
@@ -919,7 +919,7 @@ fn draw_graph_slice<D, I>(
     d: &mut D,
     src: I,
     start_time: Instant,
-    last_n: usize,
+    over_last: Duration,
     dx: std::ops::RangeInclusive<i32>,
     dy: std::ops::RangeInclusive<i32>,
     color: rl::Color,
@@ -928,10 +928,12 @@ where
     D: rl::RaylibDraw,
     I: Iterator<Item = (Instant, i32)> + Clone,
 {
-    let skip_n = src.clone().count().saturating_sub(last_n);
+    let earliest = Instant::now() - over_last;
+    let last = src.clone().last().map(|(_, y)| (Instant::now(), y));
     draw_graph(
         d,
-        src.skip(skip_n)
+        src.chain(last)
+            .skip_while(|(timestamp, _)| timestamp < &earliest)
             .map(|(timestamp, y)| ((timestamp - start_time).as_millis() as i32, y)),
         dx,
         dy,
@@ -1890,7 +1892,7 @@ fn main() {
             }
             std::mem::swap(&mut screen_data.buffer.lock().data, &mut buffer);
             screen_data.mark_updated();
-            sleep(Duration::from_millis(16));
+            sleep(Duration::from_millis(8));
         }
 
         println!("\nWaiting on worker threads...");
