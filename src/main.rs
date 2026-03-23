@@ -23,7 +23,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering::Relaxed},
-        nonpoison::{Condvar, Mutex, RwLock},
+        nonpoison::{Condvar, Mutex},
     },
     thread::sleep,
     time::{Duration, Instant},
@@ -1080,6 +1080,7 @@ impl<const BLOCK_CAP: usize> GameStateHistory<BLOCK_CAP> {
 
     pub fn sim_key_tap(&mut self, key: VirtualKey) {
         self.sim_key_down(key);
+        sleep(Duration::from_millis(8));
         self.sim_key_up(key);
     }
 
@@ -1100,6 +1101,7 @@ impl<const BLOCK_CAP: usize> GameStateHistory<BLOCK_CAP> {
 
     pub fn sim_mouse_click(&mut self) {
         self.sim_mouse_down();
+        sleep(Duration::from_millis(8));
         self.sim_mouse_up();
     }
 
@@ -1132,10 +1134,6 @@ struct ScreenData {
 impl ScreenData {
     pub const fn new(data: Vec<u8>, width: i32) -> Self {
         Self { data, width }
-    }
-
-    pub fn update_screencap(&mut self, winh: &mut WindowsHandles) -> WindowsResult<()> {
-        winh.bitblt(&mut self.data)
     }
 
     pub fn pixel_color_at(&self, pos: POINT) -> ColorRGB {
@@ -1598,9 +1596,11 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
         }
 
         if let StateData::Office(od) = &mut self.state {
-            od.is_nmbb_standing = self.screen_data.buffer.lock().is_nmbb_standing();
-            self.hist
-                .push(GameStateDelta::NMBBStanding(od.is_nmbb_standing));
+            let new_value = self.screen_data.buffer.lock().is_nmbb_standing();
+            if od.is_nmbb_standing != new_value {
+                od.is_nmbb_standing = new_value;
+                self.hist.push(GameStateDelta::NMBBStanding(new_value));
+            }
         }
 
         //self.locate_office_lamp(); // Needs work
@@ -1750,7 +1750,7 @@ impl ScreenDataPair {
 }
 
 fn main() {
-    let mut winh = WindowsHandles::new();
+    let winh = WindowsHandles::new();
 
     let screen_data = Arc::new(ScreenDataPair {
         buffer: Mutex::new(ScreenData::new(
@@ -1764,7 +1764,7 @@ fn main() {
     let threads_should_loop = AtomicBool::new(true);
 
     std::thread::scope(|s| {
-        if let Err(e) = screen_data.buffer.lock().update_screencap(&mut winh) {
+        if let Err(e) = winh.bitblt(&mut screen_data.buffer.lock().data) {
             eprintln!("failed to update screencap for first time: {e}");
             threads_should_loop.store(false, Relaxed);
             return;
@@ -1878,14 +1878,17 @@ fn main() {
             return;
         }
 
+        let mut buffer = screen_data.buffer.lock().data.clone();
+
         // Read screen pixels on the current thread so that handles don't risk going on the wrong thread
         while threads_should_loop.load(Relaxed) {
             // Update our internal copy of what the gamescreen looks like so we can sample its pixels
-            if let Err(e) = screen_data.buffer.lock().update_screencap(&mut winh) {
+            if let Err(e) = winh.bitblt(&mut buffer) {
                 eprintln!("failed to update screencap: {e}");
                 threads_should_loop.store(false, Relaxed);
                 return;
             }
+            std::mem::swap(&mut screen_data.buffer.lock().data, &mut buffer);
             screen_data.mark_updated();
             sleep(Duration::from_millis(16));
         }
