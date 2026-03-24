@@ -1,24 +1,28 @@
 //! Computer Vision
 
-use std::sync::nonpoison::{Condvar, Mutex};
-use color::{CHANNELS_PER_COLOR, CNorm, ColorRGB};
 use crate::{DECISECS_PER_SEC, SECS_PER_MIN, game_state::GameData, win::POINT};
+use color::{CHANNELS_PER_COLOR, CNorm, ColorRGB};
+use std::{
+    num::NonZeroU32,
+    sync::nonpoison::{Condvar, Mutex},
+};
 
 pub mod color;
 
 #[derive(Debug, Clone)]
 pub struct ScreenData {
     data: Vec<u8>,
-    width: i32,
+    width: NonZeroU32,
 }
 
 impl ScreenData {
-    pub const fn new(data: Vec<u8>, width: i32) -> Self {
+    pub const fn new(data: Vec<u8>, width: NonZeroU32) -> Self {
         Self { data, width }
     }
 
     pub fn pixel_color_at(&self, pos: POINT) -> ColorRGB {
-        let index: usize = CHANNELS_PER_COLOR * ((pos.y * self.width) + pos.x) as usize;
+        let index: usize =
+            CHANNELS_PER_COLOR * ((pos.y * self.width.get() as i32) + pos.x) as usize;
 
         ColorRGB {
             r: self.data[index + 2],

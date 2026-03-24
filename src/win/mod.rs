@@ -5,67 +5,141 @@
     reason = "do not create soundness holes in communicating with the OS"
 )] // TODO: change this to deny once windows.h safety has been cleared up
 
-use std::{mem::size_of, thread::sleep, time::Duration};
+use std::{mem::size_of, num::NonZeroU32, thread::sleep, time::Duration};
 
-#[cfg(windows)]
-mod wrapper_windows;
-#[cfg(not(windows))]
-mod wrapper_nonwindows;
+mod wrapper;
 
-#[cfg(windows)]
-use wrapper_windows::*;
-#[cfg(not(windows))]
-use wrapper_nonwindows::*;
-
-#[cfg(windows)]
-pub use wrapper_windows::{POINT, Result as WindowsResult};
-#[cfg(not(windows))]
-pub use wrapper_nonwindows::{POINT, Result as WindowsResult};
+pub use wrapper::Point;
+use wrapper::*;
 
 #[derive(Debug)]
 pub struct WindowsHandles {
     /// get the desktop device context
-    desktop_hdc: HDC,
+    desktop_hdc: CommonHdc,
     /// create a device context to use ourselves
-    internal_hdc: HDC,
+    internal_hdc: CompatibilityHdc,
     /// create a bitmap
-    bitmap: HBITMAP,
+    bitmap: HBitmap,
 
-    pub screen_width: i32,
-    pub screen_height: i32,
+    /// Should always be compatible with `as i32`
+    screen_width: NonZeroU32,
+    /// Should always be compatible with `as i32`
+    screen_height: NonZeroU32,
 }
 
 impl Drop for WindowsHandles {
     fn drop(&mut self) {
         unsafe {
-            _ = DeleteObject(HGDIOBJ(self.bitmap.0)); // Free the bitmap memory to the OS
+            self.ucn_hdc.release_dc();
+            self.bitmap.delete_object();
             _ = DeleteDC(self.internal_hdc); // Destroy our internal display handle
-            ReleaseDC(None, self.desktop_hdc); // Free the desktop handle
+            _ = ReleaseDC(None, self.desktop_hdc); // Free the desktop handle
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WindowsHandlesError {
+    SystemMetrics,
+    SystemMetricsTryFromInt(std::num::TryFromIntError),
+    Windows(windows::core::Error),
+}
+
+impl std::fmt::Display for WindowsHandlesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SystemMetrics => write!(f, "could not obtain screen size"),
+            Self::SystemMetricsTryFromInt(_) => {
+                write!(f, "screen cannot be negative")
+            }
+            Self::Windows(_) => write!(f, "windows error during initialization"),
+        }
+    }
+}
+
+impl std::error::Error for WindowsHandlesError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::SystemMetricsTryFromInt(e) => Some(e),
+            Self::Windows(e) => Some(e),
+            _ => None,
         }
     }
 }
 
 impl WindowsHandles {
-    pub fn new() -> Self {
-        let screen_width = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
-        let screen_height = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
+    pub fn new() -> std::result::Result<Self, WindowsHandlesError> {
+        let screen_width = NonZeroU32::new(
+            // SAFETY: GetSystemMetrics has no safety requirements.
+            unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) }
+                .try_into()
+                .map_err(WindowsHandlesError::SystemMetricsTryFromInt)?,
+        )
+        .ok_or(WindowsHandlesError::SystemMetrics)?;
+        let screen_height = NonZeroU32::new(
+            // SAFETY: GetSystemMetrics has no safety requirements.
+            unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) }
+                .try_into()
+                .map_err(WindowsHandlesError::SystemMetricsTryFromInt)?,
+        )
+        .ok_or(WindowsHandlesError::SystemMetrics)?;
 
+        let ucn_hdc = unsafe { GetWindowDC(Some(ucn_hwnd)) };
         let desktop_hdc = unsafe { GetDC(None) }; // get the desktop device context
         let internal_hdc = unsafe { CreateCompatibleDC(Some(desktop_hdc)) }; // create a device context to use ourselves
 
-        let bitmap = unsafe { CreateCompatibleBitmap(desktop_hdc, screen_width, screen_height) };
+        let bitmap = unsafe {
+            CreateCompatibleBitmap(
+                desktop_hdc,
+                screen_width.get() as i32,
+                screen_height.get() as i32,
+            )
+        };
+
         unsafe {
             SelectObject(internal_hdc, HGDIOBJ(bitmap.0)); // Get a handle to our bitmap
             // why are we ignoring the return?
         }
 
-        Self {
+        Ok(Self {
+            ucn_hdc,
+            ucn_hwnd,
             desktop_hdc,
             internal_hdc,
             bitmap,
             screen_width,
             screen_height,
-        }
+        })
+    }
+
+    #[inline]
+    pub const fn screen_width(&self) -> NonZeroU32 {
+        self.screen_width
+    }
+
+    #[inline]
+    pub const fn screen_height(&self) -> NonZeroU32 {
+        self.screen_height
+    }
+
+    #[inline]
+    pub const fn screen_width_u32(&self) -> u32 {
+        self.screen_width.get()
+    }
+
+    #[inline]
+    pub const fn screen_height_u32(&self) -> u32 {
+        self.screen_height.get()
+    }
+
+    #[inline]
+    pub const fn screen_width_i32(&self) -> i32 {
+        self.screen_width.get() as i32
+    }
+
+    #[inline]
+    pub const fn screen_height_i32(&self) -> i32 {
+        self.screen_height.get() as i32
     }
 
     pub fn bitblt(&self, buffer: &mut [u8]) -> WindowsResult<()> {
@@ -74,8 +148,8 @@ impl WindowsHandles {
                 self.internal_hdc,
                 0,
                 0,
-                self.screen_width,
-                self.screen_height,
+                self.screen_width_i32(),
+                self.screen_height_i32(),
                 Some(self.desktop_hdc),
                 0,
                 0,
@@ -86,9 +160,9 @@ impl WindowsHandles {
                 self.desktop_hdc,
                 self.bitmap,
                 0,
-                self.screen_height as u32,
+                self.screen_height_u32(),
                 Some(buffer.as_mut_ptr().cast()),
-                &mut bitmap_info(self.screen_width, self.screen_height),
+                &mut bitmap_info(self.screen_width_i32(), self.screen_height_i32()),
                 DIB_RGB_COLORS,
             );
         }
@@ -129,13 +203,21 @@ pub const fn bitmap_info(width: i32, height: i32) -> BITMAPINFO {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VirtualKey {
+    /// Front vent
     VkW = 'W' as isize,
+    /// Left door
     VkA = 'A' as isize,
+    /// Camera toggle
     VkS = 'S' as isize,
+    /// Right door
     VkD = 'D' as isize,
+    /// Right vent
     VkF = 'F' as isize,
+    /// Catch fish
     VkC = 'C' as isize,
+    /// Close ad
     VkEnter = '\n' as isize,
+    /// Desk fan
     VkSpace = ' ' as isize,
     Vk1 = '1' as isize,
     Vk2 = '2' as isize,
@@ -144,6 +226,7 @@ pub enum VirtualKey {
     Vk5 = '5' as isize,
     Vk6 = '6' as isize,
     VkX = 'X' as isize,
+    /// Flashlight
     VkZ = 'Z' as isize,
     Esc = '\x1b' as isize,
 }
@@ -200,17 +283,19 @@ pub struct MouseMovement {
     pub translation: TranslateType,
 }
 
-pub fn mouse_input(movement: Option<MouseMovement>, m1: M1State) -> INPUT {
+pub const fn mouse_input(movement: Option<MouseMovement>, m1: M1State) -> INPUT {
+    let (dx, dy, movement_flags) = match movement {
+        Some(m) => (m.x, m.y, MOUSEEVENTF_MOVE.0 | m.translation as u32),
+        None => (0, 0, 0),
+    };
     INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
             mi: MOUSEINPUT {
-                dx: movement.map_or(0, |m| m.x),
-                dy: movement.map_or(0, |m| m.y),
+                dx,
+                dy,
                 mouseData: 0,
-                dwFlags: MOUSE_EVENT_FLAGS(
-                    movement.map_or(0, |m| MOUSEEVENTF_MOVE.0 | m.translation as u32) | m1 as u32,
-                ),
+                dwFlags: MOUSE_EVENT_FLAGS(movement_flags | m1 as u32),
                 time: 0, // Pleaseeeee don't mess with this... it makes the monitor go funky...
                 dwExtraInfo: 0,
             },

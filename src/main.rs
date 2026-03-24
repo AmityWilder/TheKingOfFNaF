@@ -16,11 +16,15 @@
     reason = "you had better be certain panics won't fail"
 )]
 // #![warn(missing_docs, reason = "if I only work on this once every 5 years, there needs to be clear info about how it works")]
-#![warn(clippy::missing_const_for_fn, reason = "non-const blocks others from being const")]
+#![warn(
+    clippy::missing_const_for_fn,
+    reason = "non-const blocks others from being const"
+)]
 #![allow(dead_code)]
 #![feature(sync_nonpoison, nonpoison_condvar, nonpoison_mutex)] // Rather than poisoning, I would like the program to simply end when something goes wrong
-#![feature(iter_map_windows)]
+#![feature(iter_map_windows, offset_of_enum)]
 
+use comp_vis::{color::*, *};
 use game_state::GameState;
 use raylib::prelude::*;
 use std::{
@@ -30,15 +34,14 @@ use std::{
         nonpoison::{Condvar, Mutex},
     },
     thread::sleep,
-    time::{Duration, },
+    time::Duration,
 };
 use win::*;
-use comp_vis::{*, color::*};
 
-mod win;
 mod comp_vis;
 mod data;
 mod game_state;
+mod win;
 
 /// Time it takes for the camera to be ready for input
 const CAM_RESP_MS: u16 = 300;
@@ -75,12 +78,23 @@ mod clr {
 }
 
 fn main() {
-    let winh = WindowsHandles::new();
+    let winh = match WindowsHandles::new() {
+        Ok(winh) => winh,
+        Err(e) => {
+            eprintln!("failed to create Windows handles: {e}");
+            return;
+        }
+    };
 
     let screen_data = Arc::new(ScreenDataPair {
         buffer: Mutex::new(ScreenData::new(
-            vec![0; CHANNELS_PER_COLOR * winh.screen_width as usize * winh.screen_height as usize],
-            winh.screen_width,
+            vec![
+                0;
+                CHANNELS_PER_COLOR
+                    * winh.screen_width_u32() as usize
+                    * winh.screen_height_u32() as usize
+            ],
+            winh.screen_width(),
         )),
         counter: Mutex::new(0),
         updated: Condvar::new(),
@@ -121,7 +135,6 @@ fn main() {
         let game_state_thread = std::thread::Builder::new()
             .name("game state".to_string())
             .spawn_scoped(s, || {
-
                 // All the information we have about the state of the game
                 let mut game_state = GameState::<1024>::new(Arc::clone(&screen_data));
                 let (mut rl, thread) = init()
