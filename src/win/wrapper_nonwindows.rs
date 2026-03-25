@@ -1,6 +1,11 @@
 //! Ensures the program can compile whether we're on windows or not, even if it can't operate outside of windows
 
-#![allow(nonstandard_style, unused_variables, clippy::style, clippy::too_many_arguments)]
+#![allow(
+    nonstandard_style,
+    unused_variables,
+    clippy::style,
+    clippy::too_many_arguments
+)]
 
 #[derive(Clone)]
 pub struct Error(());
@@ -12,7 +17,7 @@ impl std::fmt::Display for Error {
 }
 
 /// A specialized [`Result`] type that provides Windows error information.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type WindowsResult<T> = std::result::Result<T, Error>;
 
 /// A 32-bit value representing boolean values and returned by some functions to indicate success or failure.
 #[must_use]
@@ -122,7 +127,17 @@ pub struct BITMAPINFOHEADER {
 }
 
 #[inline]
-pub unsafe fn BitBlt(hdc: HDC, x: i32, y: i32, cx: i32, cy: i32, hdcsrc: Option<HDC>, x1: i32, y1: i32, rop: ROP_CODE) -> Result<()> {
+pub unsafe fn BitBlt(
+    hdc: HDC,
+    x: i32,
+    y: i32,
+    cx: i32,
+    cy: i32,
+    hdcsrc: Option<HDC>,
+    x1: i32,
+    y1: i32,
+    rop: ROP_CODE,
+) -> Result<()> {
     unimplemented!()
 }
 
@@ -157,7 +172,15 @@ pub unsafe fn GetDC(hwnd: Option<HWND>) -> HDC {
 }
 
 #[inline]
-pub unsafe fn GetDIBits(hdc: HDC, hbm: HBITMAP, start: u32, clines: u32, lpvbits: Option<*mut core::ffi::c_void>, lpbmi: *mut BITMAPINFO, usage: DIB_USAGE) -> i32 {
+pub unsafe fn GetDIBits(
+    hdc: HDC,
+    hbm: HBITMAP,
+    start: u32,
+    clines: u32,
+    lpvbits: Option<*mut core::ffi::c_void>,
+    lpbmi: *mut BITMAPINFO,
+    usage: DIB_USAGE,
+) -> i32 {
     unimplemented!()
 }
 
@@ -304,7 +327,6 @@ impl Default for INPUT_0 {
         unimplemented!()
     }
 }
-
 
 pub const INPUT_HARDWARE: INPUT_TYPE = INPUT_TYPE(2u32);
 pub const INPUT_KEYBOARD: INPUT_TYPE = INPUT_TYPE(1u32);

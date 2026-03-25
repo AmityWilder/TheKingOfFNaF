@@ -16,11 +16,15 @@
     reason = "you had better be certain panics won't fail"
 )]
 // #![warn(missing_docs, reason = "if I only work on this once every 5 years, there needs to be clear info about how it works")]
-#![warn(clippy::missing_const_for_fn, reason = "non-const blocks others from being const")]
+#![warn(
+    clippy::missing_const_for_fn,
+    reason = "non-const blocks others from being const"
+)]
 #![allow(dead_code)]
 #![feature(sync_nonpoison, nonpoison_condvar, nonpoison_mutex)] // Rather than poisoning, I would like the program to simply end when something goes wrong
 #![feature(iter_map_windows)]
 
+use comp_vis::{color::*, *};
 use game_state::GameState;
 use raylib::prelude::*;
 use std::{
@@ -30,15 +34,16 @@ use std::{
         nonpoison::{Condvar, Mutex},
     },
     thread::sleep,
-    time::{Duration, },
+    time::Duration,
 };
 use win::*;
-use comp_vis::{*, color::*};
 
-mod win;
+use crate::game_state::GameData;
+
 mod comp_vis;
 mod data;
 mod game_state;
+mod win;
 
 /// Time it takes for the camera to be ready for input
 const CAM_RESP_MS: u16 = 300;
@@ -74,13 +79,32 @@ mod clr {
         std::sync::LazyLock::new(|| CAM_BTN_COLOR.normalized().normalized());
 }
 
+/// Tell other threads to stop if this token goes out of scope for any reason
+struct Lifeline<'a>(&'a AtomicBool);
+
+impl Drop for Lifeline<'_> {
+    fn drop(&mut self) {
+        println!("lifeline cut; signalling other threads to join");
+        self.0.store(false, Relaxed);
+    }
+}
+
 fn main() {
-    let winh = WindowsHandles::new();
+    let mut winh = match WindowsHandles::new(c"Ultimate Custom Night") {
+        Ok(winh) => winh,
+        Err(()) => {
+            eprintln!("failed to create Windows handles");
+            return;
+        }
+    };
+
+    let width = winh.rc_client.right.abs_diff(winh.rc_client.left);
+    let height = winh.rc_client.top.abs_diff(winh.rc_client.bottom);
 
     let screen_data = Arc::new(ScreenDataPair {
         buffer: Mutex::new(ScreenData::new(
-            vec![0; CHANNELS_PER_COLOR * winh.screen_width as usize * winh.screen_height as usize],
-            winh.screen_width,
+            winh.lpbitmap.clone(),
+            winh.rc_client.right - winh.rc_client.left,
         )),
         counter: Mutex::new(0),
         updated: Condvar::new(),
@@ -89,16 +113,17 @@ fn main() {
     let threads_should_loop = AtomicBool::new(true);
 
     std::thread::scope(|s| {
-        if let Err(e) = winh.bitblt(screen_data.buffer.lock().data_mut()) {
-            eprintln!("failed to update screencap for first time: {e}");
-            threads_should_loop.store(false, Relaxed);
-            return;
-        }
+        let _vision_ll = Lifeline(&threads_should_loop);
+
+        // first screenshot taken in WindowsHandles::new
+        winh.swap_buffer(screen_data.buffer.lock().data_mut());
+        screen_data.mark_updated();
 
         // Make sure that user control override doesn't disable the user from closing the program
         let user_guard_thread = std::thread::Builder::new()
-            .name("user guard".to_string())
+            .name("user_guard".to_string())
             .spawn_scoped(s, || {
+                let _user_guard_ll = Lifeline(&threads_should_loop);
                 // !! SAFETY !!
                 while threads_should_loop.load(Relaxed) {
                     sleep(Duration::from_millis(2)); // Give the user time to provide input
@@ -106,33 +131,77 @@ fn main() {
                     if is_key_down(VirtualKey::Esc) {
                         // mask to ignore the "toggled" bit
                         println!("User has chosen to reclaim control. Task ended.");
-                        threads_should_loop.store(false, Relaxed); // This tells the worker threads to stop
+                        break; // _user_guard_ll will tell other threads to stop
                     }
                 }
             });
 
         if let Err(e) = user_guard_thread {
             eprintln!("user guard thread failed to spawn: {e}");
-            threads_should_loop.store(false, Relaxed);
             return;
         }
 
         // Spawn a thread for acting on that data
         let game_state_thread = std::thread::Builder::new()
-            .name("game state".to_string())
+            .name("processing".to_string())
             .spawn_scoped(s, || {
+                let _processing_ll = Lifeline(&threads_should_loop);
 
                 // All the information we have about the state of the game
                 let mut game_state = GameState::<1024>::new(Arc::clone(&screen_data));
                 let (mut rl, thread) = init()
-                    .size(880, 560)
                     .title("TheKingOfFNaF")
-                    .fullscreen()
+                    .resizable()
                     .transparent()
                     .undecorated()
                     .build();
 
-                rl.set_window_state(WindowState::default().set_window_topmost(true));
+                rl.maximize_window();
+
+                rl.set_window_state(
+                    WindowState::default()
+                        .set_window_topmost(true)
+                        .set_window_always_run(true),
+                );
+
+                unsafe { ffi::SetWindowState(WindowState::) }
+
+                let mut compensate_for_weird_color_storage = rl.load_shader_from_memory(
+                    &thread,
+                    None,
+                    Some(
+                        r"\
+#version 330
+
+// Input vertex attributes (from vertex shader)
+in vec2 fragTexCoord;
+in vec4 fragColor;
+
+// Input uniform values
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+
+// Output fragment color
+out vec4 finalColor;
+
+// NOTE: Add your custom variables here
+
+void main()
+{
+    // Texel color fetching from texture sampler
+    vec4 texelColor = texture(texture0, fragTexCoord);
+
+
+    // NOTE: Implement here your fragment shader code
+
+    // final color is the color from the texture
+    //    times the tint color (colDiffuse)
+    //    times the fragment color (interpolated vertex color)
+    finalColor = texelColor.bgra*colDiffuse*fragColor;
+}
+",
+                    ),
+                );
 
                 let ucn_numbers = match rl.load_texture_from_image(
                     &thread,
@@ -140,7 +209,6 @@ fn main() {
                         Ok(x) => x,
                         Err(_) => {
                             eprintln!("failed to load image from bytes");
-                            threads_should_loop.store(false, Relaxed);
                             return;
                         }
                     },
@@ -148,18 +216,26 @@ fn main() {
                     Ok(x) => x,
                     Err(_) => {
                         eprintln!("failed to load texture from image");
-                        threads_should_loop.store(false, Relaxed);
                         return;
                     }
                 };
 
                 rl.set_target_fps(120);
 
+                let mut rtex = {
+                    match rl.load_render_texture(&thread, width, height) {
+                        Ok(rtex) => rtex,
+                        Err(e) => {
+                            eprintln!("failed to load render texture: {e}");
+                            return;
+                        }
+                    }
+                };
+
                 let mut is_paused = false;
 
                 while threads_should_loop.load(Relaxed) {
                     if rl.window_should_close() {
-                        threads_should_loop.store(false, Relaxed);
                         println!("User has chosen to reclaim control. Task ended.");
                         break;
                     }
@@ -178,7 +254,36 @@ fn main() {
 
                     // Output the data for the user to view
                     let mut d = rl.begin_drawing(&thread);
-                    d.clear_background(Color::BLACK);
+                    d.clear_background(Color::BLANK);
+
+                    if let Err(e) = rtex.update_texture_rec(
+                        rrect(0, 0, width, height),
+                        screen_data.buffer.lock().data_mut(),
+                    ) {
+                        eprintln!("failed to update render texture: {e}");
+                        return;
+                    }
+
+                    {
+                        let mut d = d.begin_shader_mode(&mut compensate_for_weird_color_storage);
+                        // d.draw_texture_pro(
+                        //     &rtex,
+                        //     rrect(0, rtex.height(), rtex.width(), -rtex.height()),
+                        //     rrect(0, 0, rtex.width(), rtex.height()),
+                        //     Vector2::zero(),
+                        //     0.0,
+                        //     Color::WHITE,
+                        // );
+                    }
+
+                    for x in [
+                        GameData::CLK_DECISEC_X,
+                        GameData::CLK_SEC_X,
+                        GameData::CLK_10SEC_X,
+                        GameData::CLK_POS.x,
+                    ] {
+                        d.draw_rectangle_lines(x, GameData::CLK_POS.y, 10, 12, Color::RED);
+                    }
 
                     game_state.draw_data(
                         &mut d,
@@ -196,33 +301,31 @@ fn main() {
                         }
                     }
 
+                    d.draw_fps(0, 600);
+
                     // sleep(Duration::from_millis(4)); // Already done by raylib's EndDrawing()
                 }
             });
 
         if let Err(e) = game_state_thread {
             eprintln!("game state thread failed to spawn: {e}");
-            threads_should_loop.store(false, Relaxed);
             return;
         }
-
-        let mut buffer = vec![0; screen_data.buffer.lock().len()];
 
         // Read screen pixels on the current thread so that handles don't risk going on the wrong thread
         while threads_should_loop.load(Relaxed) {
             // Update our internal copy of what the gamescreen looks like so we can sample its pixels
-            if let Err(e) = winh.bitblt(&mut buffer) {
-                eprintln!("failed to update screencap: {e}");
-                threads_should_loop.store(false, Relaxed);
+            if let Err(()) = winh.screenshot() {
+                eprintln!("failed to update screencap");
                 return;
             }
-            std::mem::swap(screen_data.buffer.lock().data_mut(), &mut buffer);
+            winh.swap_buffer(screen_data.buffer.lock().data_mut()); // transfer bits to screen_data so other threads can read them
             screen_data.mark_updated();
-            sleep(Duration::from_millis(8));
+            sleep(Duration::from_millis(2));
         }
 
-        println!("\nWaiting on worker threads...");
+        println!("Waiting on worker threads...");
         // Wait for threads to safely finish their respective functions before destructing them
     });
-    println!("\nWorker threads joined.");
+    println!("Worker threads joined.");
 }

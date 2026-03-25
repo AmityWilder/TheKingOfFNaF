@@ -20,5 +20,5 @@ pub use windows::{
             },
         },
     },
-    core::Result,
+    core::Result as WindowsResult,
 };

@@ -5,94 +5,316 @@
     reason = "do not create soundness holes in communicating with the OS"
 )] // TODO: change this to deny once windows.h safety has been cleared up
 
-use std::{mem::size_of, thread::sleep, time::Duration};
+use std::{ffi::CStr, mem::size_of, thread::sleep, time::Duration};
 
-#[cfg(windows)]
-mod wrapper_windows;
 #[cfg(not(windows))]
 mod wrapper_nonwindows;
-
 #[cfg(windows)]
-use wrapper_windows::*;
+mod wrapper_windows;
+
+use windows::{
+    Win32::{
+        Foundation::{HWND, RECT},
+        Graphics::Gdi::{BITMAP, GetObjectA, STRETCH_HALFTONE, SetStretchBltMode, StretchBlt},
+        UI::WindowsAndMessaging::{FindWindowA, GetClientRect, SM_CXSCREEN, SM_CYSCREEN},
+    },
+    core::PCSTR,
+};
 #[cfg(not(windows))]
 use wrapper_nonwindows::*;
-
 #[cfg(windows)]
-pub use wrapper_windows::{POINT, Result as WindowsResult};
+use wrapper_windows::*;
+
 #[cfg(not(windows))]
-pub use wrapper_nonwindows::{POINT, Result as WindowsResult};
+pub use wrapper_nonwindows::POINT;
+#[cfg(windows)]
+pub use wrapper_windows::POINT;
+
+#[derive(Debug)]
+struct CommonHdc(HDC);
+
+impl Drop for CommonHdc {
+    fn drop(&mut self) {
+        // SAFETY: CommonHdc contains a mutable pointer, so it denies Send/Sync,
+        // guaranteeing this thread is the one it was created on.
+        unsafe {
+            _ = ReleaseDC(None, self.0);
+        }
+    }
+}
+
+impl CommonHdc {
+    unsafe fn get() -> Result<Self, ()> {
+        // SAFETY: Caller must uphold safety contract
+        let hdc = unsafe { GetDC(None) };
+        if !hdc.is_invalid() {
+            Ok(Self(hdc))
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Debug)]
+struct WindowHdc(HWND, HDC);
+
+impl Drop for WindowHdc {
+    fn drop(&mut self) {
+        // SAFETY: WindowHdc contains a mutable pointer, so it denies Send/Sync,
+        // guaranteeing this thread is the one it was created on.
+        unsafe {
+            _ = ReleaseDC(Some(self.0), self.1);
+        }
+    }
+}
+
+impl WindowHdc {
+    unsafe fn get(hwnd: HWND) -> Result<Self, ()> {
+        // SAFETY: Caller must uphold safety contract
+        let hdc = unsafe { GetDC(None) };
+        if !hdc.is_invalid() {
+            Ok(Self(hwnd, hdc))
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CompatibleHdc(HDC);
+
+impl Drop for CompatibleHdc {
+    fn drop(&mut self) {
+        // SAFETY: CompatibleHdc contains a mutable pointer, so it denies Send/Sync,
+        // guaranteeing this thread is the one it was created on.
+        unsafe {
+            _ = DeleteDC(self.0);
+        }
+    }
+}
+
+impl CompatibleHdc {
+    unsafe fn create(hdc: HDC) -> Result<Self, ()> {
+        // SAFETY: Caller must uphold safety contract
+        let c_hdc = unsafe { CreateCompatibleDC(Some(hdc)) };
+        if !c_hdc.is_invalid() {
+            Ok(Self(c_hdc))
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Debug)]
+struct HBitmap(HBITMAP);
+
+impl Drop for HBitmap {
+    fn drop(&mut self) {
+        // SAFETY: HBitmap contains a mutable pointer, so it denies Send/Sync,
+        // guaranteeing this thread is the one it was created on.
+        unsafe {
+            _ = DeleteObject(self.0.into());
+        }
+    }
+}
+
+impl HBitmap {
+    unsafe fn create(hdc: HDC, cx: i32, cy: i32) -> Result<Self, ()> {
+        // SAFETY: Caller must uphold safety contract
+        let hbm = unsafe { CreateCompatibleBitmap(hdc, cx, cy) };
+        if !hbm.is_invalid() {
+            Ok(Self(hbm))
+        } else {
+            Err(())
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct WindowsHandles {
-    /// get the desktop device context
-    desktop_hdc: HDC,
-    /// create a device context to use ourselves
-    internal_hdc: HDC,
-    /// create a bitmap
-    bitmap: HBITMAP,
-
-    pub screen_width: i32,
-    pub screen_height: i32,
-}
-
-impl Drop for WindowsHandles {
-    fn drop(&mut self) {
-        unsafe {
-            _ = DeleteObject(HGDIOBJ(self.bitmap.0)); // Free the bitmap memory to the OS
-            _ = DeleteDC(self.internal_hdc); // Destroy our internal display handle
-            ReleaseDC(None, self.desktop_hdc); // Free the desktop handle
-        }
-    }
+    hdc_screen: CommonHdc,
+    hdc_window: WindowHdc,
+    hdc_mem_dc: CompatibleHdc,
+    hbm_screen: HBitmap,
+    pub bmp_screen: BITMAP,
+    pub lpbitmap: Box<[u8]>,
+    pub rc_client: RECT,
+    pub bi: BITMAPINFO,
 }
 
 impl WindowsHandles {
-    pub fn new() -> Self {
-        let screen_width = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
-        let screen_height = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
+    pub fn new(windowname: &CStr) -> Result<Self, ()> {
+        let h_wnd = unsafe { FindWindowA(None, PCSTR::from_raw(windowname.as_ptr().cast())) }
+            .map_err(|_| ())?;
+        let hdc_screen = unsafe { CommonHdc::get() }?;
+        let hdc_window = unsafe { WindowHdc::get(h_wnd) }?;
+        _ = h_wnd; // access through hdc_window.0
+        let hdc_mem_dc = unsafe { CompatibleHdc::create(hdc_window.1) }?;
 
-        let desktop_hdc = unsafe { GetDC(None) }; // get the desktop device context
-        let internal_hdc = unsafe { CreateCompatibleDC(Some(desktop_hdc)) }; // create a device context to use ourselves
+        let mut rc_client = RECT::default();
+        // SAFETY: GetClientRect has no safety requirements (sus)
+        unsafe { GetClientRect(hdc_window.0, &mut rc_client) }.map_err(|_| ())?;
 
-        let bitmap = unsafe { CreateCompatibleBitmap(desktop_hdc, screen_width, screen_height) };
         unsafe {
-            SelectObject(internal_hdc, HGDIOBJ(bitmap.0)); // Get a handle to our bitmap
-            // why are we ignoring the return?
+            SetStretchBltMode(hdc_window.1, STRETCH_HALFTONE);
         }
 
-        Self {
-            desktop_hdc,
-            internal_hdc,
-            bitmap,
-            screen_width,
-            screen_height,
+        if !unsafe {
+            StretchBlt(
+                hdc_window.1,
+                0,
+                0,
+                rc_client.right,
+                rc_client.bottom,
+                Some(hdc_screen.0),
+                0,
+                0,
+                GetSystemMetrics(SM_CXSCREEN),
+                GetSystemMetrics(SM_CYSCREEN),
+                SRCCOPY,
+            )
         }
-    }
+        .as_bool()
+        {
+            return Err(());
+        }
 
-    pub fn bitblt(&self, buffer: &mut [u8]) -> WindowsResult<()> {
+        let hbm_screen = unsafe {
+            HBitmap::create(
+                hdc_window.1,
+                rc_client.right - rc_client.left,
+                rc_client.bottom - rc_client.top,
+            )
+        }?;
+
         unsafe {
+            SelectObject(hdc_mem_dc.0, hbm_screen.0.into());
+        }
+
+        let mut bmp_screen = BITMAP::default();
+
+        if unsafe {
             BitBlt(
-                self.internal_hdc,
+                hdc_mem_dc.0,
                 0,
                 0,
-                self.screen_width,
-                self.screen_height,
-                Some(self.desktop_hdc),
+                rc_client.right - rc_client.left,
+                rc_client.bottom - rc_client.top,
+                Some(hdc_window.1),
                 0,
                 0,
                 SRCCOPY,
-            )?;
+            )
+        }
+        .is_err()
+        {
+            return Err(());
+        }
 
+        unsafe {
+            GetObjectA(
+                hbm_screen.0.into(),
+                std::mem::size_of::<BITMAP>() as i32,
+                Some((&raw mut bmp_screen).cast()),
+            );
+        }
+
+        let mut bi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: bmp_screen.bmWidth,
+                biHeight: bmp_screen.bmHeight,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                biSizeImage: 0,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [RGBQUAD::default(); 1], // windows does this unsoundly
+        };
+
+        let dw_bmp_size = ((bmp_screen.bmWidth * bi.bmiHeader.biBitCount as i32 + 31) / 32)
+            * 4
+            * bmp_screen.bmHeight;
+
+        let mut lpbitmap = vec![0; dw_bmp_size as usize].into_boxed_slice();
+
+        unsafe {
             GetDIBits(
-                self.desktop_hdc,
-                self.bitmap,
+                hdc_window.1,
+                hbm_screen.0,
                 0,
-                self.screen_height as u32,
-                Some(buffer.as_mut_ptr().cast()),
-                &mut bitmap_info(self.screen_width, self.screen_height),
+                bmp_screen.bmHeight as u32,
+                Some(lpbitmap.as_mut_ptr().cast()),
+                &mut bi,
                 DIB_RGB_COLORS,
             );
         }
+
+        Ok(Self {
+            hdc_screen,
+            hdc_window,
+            hdc_mem_dc,
+            hbm_screen,
+            bmp_screen,
+            lpbitmap,
+            rc_client,
+            bi,
+        })
+    }
+
+    pub fn screenshot(&mut self) -> Result<(), ()> {
+        unsafe {
+            SelectObject(self.hdc_mem_dc.0, self.hbm_screen.0.into());
+        }
+
+        if unsafe {
+            BitBlt(
+                self.hdc_mem_dc.0,
+                0,
+                0,
+                self.rc_client.right - self.rc_client.left,
+                self.rc_client.bottom - self.rc_client.top,
+                Some(self.hdc_window.1),
+                0,
+                0,
+                SRCCOPY,
+            )
+        }
+        .is_err()
+        {
+            return Err(());
+        }
+
+        unsafe {
+            GetObjectA(
+                self.hbm_screen.0.into(),
+                std::mem::size_of::<BITMAP>() as i32,
+                Some((&raw mut self.bmp_screen).cast()),
+            );
+        }
+
+        unsafe {
+            GetDIBits(
+                self.hdc_window.1,
+                self.hbm_screen.0,
+                0,
+                self.bmp_screen.bmHeight as u32,
+                Some(self.lpbitmap.as_mut_ptr().cast()),
+                &mut self.bi,
+                DIB_RGB_COLORS,
+            );
+        }
+
         Ok(())
+    }
+
+    #[inline]
+    pub const fn swap_buffer(&mut self, buffer: &mut Box<[u8]>) {
+        std::mem::swap(&mut self.lpbitmap, buffer);
     }
 }
 

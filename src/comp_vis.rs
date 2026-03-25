@@ -1,19 +1,19 @@
 //! Computer Vision
 
-use std::sync::nonpoison::{Condvar, Mutex};
-use color::{CHANNELS_PER_COLOR, CNorm, ColorRGB};
 use crate::{DECISECS_PER_SEC, SECS_PER_MIN, game_state::GameData, win::POINT};
+use color::{CHANNELS_PER_COLOR, CNorm, ColorRGB};
+use std::sync::nonpoison::{Condvar, Mutex};
 
 pub mod color;
 
 #[derive(Debug, Clone)]
 pub struct ScreenData {
-    data: Vec<u8>,
+    data: Box<[u8]>,
     width: i32,
 }
 
 impl ScreenData {
-    pub const fn new(data: Vec<u8>, width: i32) -> Self {
+    pub const fn new(data: Box<[u8]>, width: i32) -> Self {
         Self { data, width }
     }
 
@@ -27,11 +27,15 @@ impl ScreenData {
         }
     }
 
+    pub const fn size(&self) -> (u32, u32) {
+        (self.width as u32, self.len() as u32 / self.width as u32)
+    }
+
     pub const fn len(&self) -> usize {
         self.data.len()
     }
 
-    pub const fn data_mut(&mut self) -> &mut Vec<u8> {
+    pub const fn data_mut(&mut self) -> &mut Box<[u8]> {
         &mut self.data
     }
 }
