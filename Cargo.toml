@@ -4,11 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+enigo = "0.6.1"
 raylib = "5.5.1"
-
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.62.2", features = [
-    "Win32_Graphics_Gdi",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_WindowsAndMessaging",
-] }
+xcap = "0.9.3"
