@@ -1,8 +1,9 @@
 //! Computer Vision
 
-use std::sync::nonpoison::{Condvar, Mutex};
+use crate::{DECISECS_PER_SEC, SECS_PER_MIN, game_state::GameData};
 use color::{CHANNELS_PER_COLOR, CNorm, ColorRGB};
-use crate::{DECISECS_PER_SEC, SECS_PER_MIN, game_state::GameData, win::POINT};
+use std::sync::nonpoison::{Condvar, Mutex};
+use vidivici::IVec2;
 
 pub mod color;
 
@@ -17,7 +18,7 @@ impl ScreenData {
         Self { data, width }
     }
 
-    pub fn pixel_color_at(&self, pos: POINT) -> ColorRGB {
+    pub fn pixel_color_at(&self, pos: IVec2) -> ColorRGB {
         let index: usize = CHANNELS_PER_COLOR * ((pos.y * self.width) + pos.x) as usize;
 
         ColorRGB {
@@ -53,15 +54,15 @@ impl std::fmt::Display for ReadNumberError {
 
 impl std::error::Error for ReadNumberError {}
 
-pub const READ_NUMBER_SAMPLE_OFFSETS: [POINT; 8] = [
-    POINT { x: 5, y: 0 },  // top middle
-    POINT { x: 0, y: 7 },  // upper-middle left
-    POINT { x: 10, y: 7 }, // upper-middle right
-    POINT { x: 5, y: 8 },  // lower-middle middle
-    POINT { x: 0, y: 8 },  // lower-middle left
-    POINT { x: 10, y: 8 }, // lower-middle right
-    POINT { x: 0, y: 12 }, // bottom left
-    POINT { x: 5, y: 12 }, // bottom middle
+pub const READ_NUMBER_SAMPLE_OFFSETS: [IVec2; 8] = [
+    IVec2 { x: 5, y: 0 },  // top middle
+    IVec2 { x: 0, y: 7 },  // upper-middle left
+    IVec2 { x: 10, y: 7 }, // upper-middle right
+    IVec2 { x: 5, y: 8 },  // lower-middle middle
+    IVec2 { x: 0, y: 8 },  // lower-middle left
+    IVec2 { x: 10, y: 8 }, // lower-middle right
+    IVec2 { x: 0, y: 12 }, // bottom left
+    IVec2 { x: 5, y: 12 }, // bottom middle
 ];
 
 pub const READ_NUMBER_SAMPLE_FLAGS: [u8; 10] = [
@@ -76,7 +77,7 @@ impl ScreenData {
 
         let mut guess_bitflags: u8 = 0;
         for (sample, offset) in READ_NUMBER_SAMPLE_OFFSETS.iter().enumerate() {
-            let sample_pos = POINT {
+            let sample_pos = IVec2 {
                 x: x + offset.x,
                 y: y + offset.y,
             };
@@ -120,22 +121,22 @@ impl ScreenData {
     }
 }
 
-const fn generate_sample_points(start: POINT, scale: i32) -> [POINT; 5] {
+const fn generate_sample_points(start: IVec2, scale: i32) -> [IVec2; 5] {
     [
         start,
-        POINT {
+        IVec2 {
             x: start.x,
             y: start.y + scale,
         },
-        POINT {
+        IVec2 {
             x: start.x + scale,
             y: start.y,
         },
-        POINT {
+        IVec2 {
             x: start.x,
             y: start.y - scale,
         },
-        POINT {
+        IVec2 {
             x: start.x - scale,
             y: start.y,
         },
@@ -148,7 +149,7 @@ impl ScreenData {
     /// - `threshold`: 0..1 double value for the minimum similarity required to consider a sample point a "match"
     ///
     /// returns: Total number of sample points which exceeded the threshold
-    pub fn test_samples(&self, center: POINT, compare: CNorm, threshold: f64) -> i32 {
+    pub fn test_samples(&self, center: IVec2, compare: CNorm, threshold: f64) -> i32 {
         let mut match_count = 0;
         for sample_point in generate_sample_points(center, 4) {
             let sample = self.pixel_color_at(sample_point).normalized();
@@ -159,7 +160,7 @@ impl ScreenData {
         match_count
     }
 
-    pub fn test_samples_gray(&self, center: POINT, compare: u8, max_difference: u8) -> i32 {
+    pub fn test_samples_gray(&self, center: IVec2, compare: u8, max_difference: u8) -> i32 {
         let mut match_count: i32 = 0;
         for sample_point in generate_sample_points(center, 4) {
             let sample = self.pixel_color_at(sample_point).gray();

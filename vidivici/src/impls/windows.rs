@@ -1,26 +1,29 @@
-//! windows.h is ew yucky, i dont want it touching the main program
+//! Ensures the program can compile whether we're on windows or not, even if it can't operate outside of windows
 
-#![warn(
-    clippy::undocumented_unsafe_blocks,
-    reason = "do not create soundness holes in communicating with the OS"
-)] // TODO: change this to deny once windows.h safety has been cleared up
-
-use std::{mem::size_of, thread::sleep, time::Duration};
-
-#[cfg(windows)]
-mod wrapper_windows;
-#[cfg(not(windows))]
-mod wrapper_nonwindows;
-
-#[cfg(windows)]
-use wrapper_windows::*;
-#[cfg(not(windows))]
-use wrapper_nonwindows::*;
-
-#[cfg(windows)]
-pub use wrapper_windows::{POINT, Result as WindowsResult};
-#[cfg(not(windows))]
-pub use wrapper_nonwindows::{POINT, Result as WindowsResult};
+use super::*;
+use std::ffi::c_char;
+use windows::{
+    Win32::{
+        Foundation::POINT,
+        Graphics::Gdi::{
+            BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap,
+            CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, HBITMAP,
+            HDC, HGDIOBJ, RGBQUAD, ReleaseDC, SRCCOPY, SelectObject,
+        },
+        UI::{
+            Input::KeyboardAndMouse::{
+                GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBD_EVENT_FLAGS,
+                KEYBDINPUT, KEYEVENTF_KEYUP, MOUSE_EVENT_FLAGS, MOUSEEVENTF_ABSOLUTE,
+                MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEINPUT, SendInput,
+                VIRTUAL_KEY,
+            },
+            WindowsAndMessaging::{
+                GetCursorPos, GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+            },
+        },
+    },
+    core::Result,
+};
 
 #[derive(Debug)]
 pub struct WindowsHandles {
@@ -68,7 +71,7 @@ impl WindowsHandles {
         }
     }
 
-    pub fn bitblt(&self, buffer: &mut [u8]) -> WindowsResult<()> {
+    pub fn bitblt(&self, buffer: &mut [u8]) -> IoResult<()> {
         unsafe {
             BitBlt(
                 self.internal_hdc,
@@ -120,46 +123,23 @@ pub const fn bitmap_info(width: i32, height: i32) -> BITMAPINFO {
     }
 }
 
-////////////////////////////////////////////////////
-// This is where we send basic output to the game //
-// e.g.                                           //
-// - Press "d" key                                //
-// - Move mouse to { 24, 36 }                     //
-////////////////////////////////////////////////////
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VirtualKey {
-    VkW = 'W' as isize,
-    VkA = 'A' as isize,
-    VkS = 'S' as isize,
-    VkD = 'D' as isize,
-    VkF = 'F' as isize,
-    VkC = 'C' as isize,
-    VkEnter = '\n' as isize,
-    VkSpace = ' ' as isize,
-    Vk1 = '1' as isize,
-    Vk2 = '2' as isize,
-    Vk3 = '3' as isize,
-    Vk4 = '4' as isize,
-    Vk5 = '5' as isize,
-    Vk6 = '6' as isize,
-    VkX = 'X' as isize,
-    VkZ = 'Z' as isize,
-    Esc = '\x1b' as isize,
-}
-
-#[allow(non_upper_case_globals)]
-impl VirtualKey {
-    pub const FrontVent: Self = Self::VkW;
-    pub const LeftDoor: Self = Self::VkA;
-    pub const CameraToggle: Self = Self::VkS;
-    pub const RightDoor: Self = Self::VkD;
-    pub const RightVent: Self = Self::VkF;
-    pub const CatchFish: Self = Self::VkC;
-    pub const CloseAd: Self = Self::VkEnter;
-    pub const DeskFan: Self = Self::VkSpace;
-    pub const Flashlight: Self = Self::VkZ;
-}
+pub const VK_W: c_char = b'W' as c_char;
+pub const VK_A: c_char = b'A' as c_char;
+pub const VK_S: c_char = b'S' as c_char;
+pub const VK_D: c_char = b'D' as c_char;
+pub const VK_F: c_char = b'F' as c_char;
+pub const VK_C: c_char = b'C' as c_char;
+pub const VK_ENTER: c_char = b'\n' as c_char;
+pub const VK_SPACE: c_char = b' ' as c_char;
+pub const VK_1: c_char = b'1' as c_char;
+pub const VK_2: c_char = b'2' as c_char;
+pub const VK_3: c_char = b'3' as c_char;
+pub const VK_4: c_char = b'4' as c_char;
+pub const VK_5: c_char = b'5' as c_char;
+pub const VK_6: c_char = b'6' as c_char;
+pub const VK_X: c_char = b'X' as c_char;
+pub const VK_Z: c_char = b'Z' as c_char;
+pub const VK_ESC: c_char = b'\x1b' as c_char;
 
 pub const fn key_input(key: VirtualKey, key_up: bool) -> INPUT {
     INPUT {
@@ -239,15 +219,15 @@ pub fn simulate_key_tap(key: VirtualKey) {
     simulate_key_up(key);
 }
 
-pub fn get_mouse_pos() -> POINT {
-    let mut p = POINT::default();
+pub fn get_mouse_pos() -> IVec2 {
+    let mut p = IVec2::default();
     match unsafe { GetCursorPos(&mut p) } {
         Ok(()) => p,
-        Err(_) => POINT::default(),
+        Err(_) => IVec2::default(),
     }
 }
 
-pub fn simulate_mouse_move(p: POINT) {
+pub fn simulate_mouse_move(p: IVec2) {
     let input = mouse_input(
         Some(MouseMovement {
             x: p.x,
@@ -261,7 +241,7 @@ pub fn simulate_mouse_move(p: POINT) {
     }
 }
 
-pub fn simulate_mouse_goto(p: POINT) {
+pub fn simulate_mouse_goto(p: IVec2) {
     let input = mouse_input(
         Some(MouseMovement {
             x: p.x * 34,
@@ -296,7 +276,7 @@ pub fn simulate_mouse_click() {
     simulate_mouse_up();
 }
 
-pub fn simulate_mouse_click_at(p: POINT) {
+pub fn simulate_mouse_click_at(p: IVec2) {
     simulate_mouse_goto(p);
     simulate_mouse_click();
 }

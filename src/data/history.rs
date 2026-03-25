@@ -1,6 +1,13 @@
-use std::{collections::LinkedList, thread::sleep, time::{Duration, Instant}};
-
-use crate::{game_state::{Camera, Duct, State, Vent}, win::{POINT, VirtualKey, simulate_key_down, simulate_key_up, simulate_mouse_down, simulate_mouse_goto, simulate_mouse_up}};
+use crate::game_state::{Camera, Duct, State, Vent};
+use std::{
+    collections::LinkedList,
+    thread::sleep,
+    time::{Duration, Instant},
+};
+use vidivici::{
+    IVec2, VirtualKey, simulate_key_down, simulate_key_up, simulate_mouse_down,
+    simulate_mouse_goto, simulate_mouse_up,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GameStateDelta {
@@ -12,13 +19,13 @@ pub enum GameStateDelta {
     Camera(Camera),
     VentSnare(Vent),
     ClosedDuct(Duct),
-    AudioLure(POINT),
+    AudioLure(IVec2),
     VentilationResetNeeded(bool),
     FlashlightOn(bool),
     DoorClosed(u8, bool),
     NMBBStanding(bool),
     VirtualKeyInput { key: VirtualKey, is_down: bool },
-    VirtualMouseMove { pos: POINT },
+    VirtualMouseMove { pos: IVec2 },
     VirtualMouseButton { input_press: bool },
 }
 
@@ -99,7 +106,7 @@ impl<const BLOCK_CAP: usize> GameStateHistory<BLOCK_CAP> {
         self.sim_key_up(key);
     }
 
-    pub fn sim_mouse_goto(&mut self, pos: POINT) {
+    pub fn sim_mouse_goto(&mut self, pos: IVec2) {
         self.push(GameStateDelta::VirtualMouseMove { pos });
         simulate_mouse_goto(pos);
     }
@@ -120,7 +127,7 @@ impl<const BLOCK_CAP: usize> GameStateHistory<BLOCK_CAP> {
         self.sim_mouse_up();
     }
 
-    pub fn sim_mouse_click_at(&mut self, p: POINT) {
+    pub fn sim_mouse_click_at(&mut self, p: IVec2) {
         self.sim_mouse_goto(p);
         self.sim_mouse_click();
     }

@@ -1,5 +1,7 @@
 //! Color analysis
 
+use vidivici::ColorRGB;
+
 /// Bitmap channels, not [`ColorRGB`] channels
 pub const CHANNELS_PER_COLOR: usize = 4;
 
@@ -26,45 +28,6 @@ impl CNorm {
     pub const fn dot(&self, rhs: Self) -> f64 {
         self.r * rhs.r + self.g * rhs.g + self.b * rhs.b
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct ColorHSL {
-    /// A degree on the color wheel [0..360]
-    pub hue: f64,
-    /// Percentage of color [0..100]
-    pub sat: f64,
-    /// Percentage of brightness [0..100]
-    pub lum: f64,
-}
-
-/// 24-bit RGB color
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct ColorRGB {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-}
-
-impl ColorRGB {
-    pub const fn gray(&self) -> u8 {
-        ((self.r as u16 + self.g as u16 + self.b as u16) / 3) as u8
-    }
-
-    pub const fn red_dev(&self) -> i32 {
-        let dist_from_mean = self.r as i32 - self.gray() as i32;
-        ((dist_from_mean * dist_from_mean) / 3).isqrt()
-    }
-
-    pub const fn green_dev(&self) -> i32 {
-        let dist_from_mean = self.g as i32 - self.gray() as i32;
-        ((dist_from_mean * dist_from_mean) / 3).isqrt()
-    }
-
-    pub const fn blue_dev(&self) -> i32 {
-        let dist_from_mean = self.b as i32 - self.gray() as i32;
-        ((dist_from_mean * dist_from_mean) / 3).isqrt()
-    }
 
     // Convert the color components from 0..=255 to 0.0..=1.0
     pub const fn normalized(&self) -> CNorm {
@@ -77,10 +40,30 @@ impl ColorRGB {
     }
 
     pub fn similarity(&self, other: ColorRGB) -> f64 {
-        self.normalized()
-            .normalized()
-            .dot(other.normalized().normalized())
+        self.normalized().dot(other.normalized())
     }
+}
+
+impl From<ColorRGB> for CNorm {
+    /// Convert the color components from 0..=255 to 0.0..=1.0
+    fn from(value: ColorRGB) -> Self {
+        const INV_BYTE_MAX: f64 = 1.0 / 255.0;
+        CNorm {
+            r: value.r as f64 * INV_BYTE_MAX,
+            g: value.g as f64 * INV_BYTE_MAX,
+            b: value.b as f64 * INV_BYTE_MAX,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ColorHSL {
+    /// A degree on the color wheel [0..360]
+    pub hue: f64,
+    /// Percentage of color [0..100]
+    pub sat: f64,
+    /// Percentage of brightness [0..100]
+    pub lum: f64,
 }
 
 impl From<ColorRGB> for ColorHSL {

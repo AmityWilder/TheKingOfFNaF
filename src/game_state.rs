@@ -1,9 +1,18 @@
-use std::{sync::Arc, thread::sleep, time::Duration};
-
+use crate::{
+    CAM_RESP_MS, DECISECS_PER_HOUR, DECISECS_PER_SEC, MS_PER_DECISEC, clr,
+    comp_vis::{
+        READ_NUMBER_SAMPLE_FLAGS, READ_NUMBER_SAMPLE_OFFSETS, ReadNumberError, ScreenData,
+        ScreenDataPair, color::ColorRGB,
+    },
+    data::{
+        draw_graph_slice,
+        history::{GameStateDelta, GameStateHistory},
+    },
+};
 use clk::ClockTime;
 use raylib::prelude::*;
-
-use crate::{CAM_RESP_MS, DECISECS_PER_HOUR, DECISECS_PER_SEC, MS_PER_DECISEC, clr, comp_vis::{READ_NUMBER_SAMPLE_FLAGS, READ_NUMBER_SAMPLE_OFFSETS, ReadNumberError, ScreenData, ScreenDataPair, color::ColorRGB}, data::{draw_graph_slice, history::{GameStateDelta, GameStateHistory}}, win::{POINT, VirtualKey}};
+use std::{sync::Arc, thread::sleep, time::Duration};
+use vidivici::{IVec2, VirtualKey};
 
 pub mod clk;
 
@@ -102,11 +111,11 @@ pub struct OfficeData {
 }
 
 impl OfficeData {
-    pub const MASK_POS: POINT = POINT { x: 682, y: 1006 };
+    pub const MASK_POS: IVec2 = IVec2 { x: 682, y: 1006 };
     /// The office version of this constant
-    pub const VENT_WARNING_POS: POINT = POINT { x: 1580, y: 1040 };
+    pub const VENT_WARNING_POS: IVec2 = IVec2 { x: 1580, y: 1040 };
 
-    pub const _FOXY: POINT = POINT { x: 801, y: 710 };
+    pub const _FOXY: IVec2 = IVec2 { x: 801, y: 710 };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -117,26 +126,26 @@ pub struct CameraData {
 
 impl CameraData {
     /// Location for testing vent warning in the cameras
-    pub const VENT_WARNING_POS: POINT = POINT { x: 1563, y: 892 };
+    pub const VENT_WARNING_POS: IVec2 = IVec2 { x: 1563, y: 892 };
     /// Where the reset vent button is for clicking
-    pub const RESET_VENT_BTN_POS: POINT = POINT { x: 1700, y: 915 };
+    pub const RESET_VENT_BTN_POS: IVec2 = IVec2 { x: 1700, y: 915 };
 
     /// WestHall
-    pub const CAM_01_POS: POINT = POINT { x: 1133, y: 903 };
+    pub const CAM_01_POS: IVec2 = IVec2 { x: 1133, y: 903 };
     /// EastHall
-    pub const CAM_02_POS: POINT = POINT { x: 1382, y: 903 };
+    pub const CAM_02_POS: IVec2 = IVec2 { x: 1382, y: 903 };
     /// Closet
-    pub const CAM_03_POS: POINT = POINT { x: 1067, y: 825 };
+    pub const CAM_03_POS: IVec2 = IVec2 { x: 1067, y: 825 };
     /// Kitchen
-    pub const CAM_04_POS: POINT = POINT { x: 1491, y: 765 };
+    pub const CAM_04_POS: IVec2 = IVec2 { x: 1491, y: 765 };
     /// PirateCove
-    pub const CAM_05_POS: POINT = POINT { x: 1122, y: 670 };
+    pub const CAM_05_POS: IVec2 = IVec2 { x: 1122, y: 670 };
     /// ShowtimeStage
-    pub const CAM_06_POS: POINT = POINT { x: 1422, y: 590 };
+    pub const CAM_06_POS: IVec2 = IVec2 { x: 1422, y: 590 };
     /// PrizeCounter
-    pub const CAM_07_POS: POINT = POINT { x: 1278, y: 503 };
+    pub const CAM_07_POS: IVec2 = IVec2 { x: 1278, y: 503 };
     /// PartsAndServices
-    pub const CAM_08_POS: POINT = POINT { x: 988, y: 495 };
+    pub const CAM_08_POS: IVec2 = IVec2 { x: 988, y: 495 };
 
     /// System buttons X position
     pub const SYS_BTN_X: i32 = 1331;
@@ -156,29 +165,29 @@ pub struct VentData {
 
 impl VentData {
     /// Left snare
-    pub const SNARE_L_POS: POINT = POINT { x: 548, y: 645 };
+    pub const SNARE_L_POS: IVec2 = IVec2 { x: 548, y: 645 };
     /// Top snare
-    pub const SNARE_T_POS: POINT = POINT { x: 650, y: 536 };
+    pub const SNARE_T_POS: IVec2 = IVec2 { x: 650, y: 536 };
     /// Right snare
-    pub const SNARE_R_POS: POINT = POINT { x: 747, y: 645 };
+    pub const SNARE_R_POS: IVec2 = IVec2 { x: 747, y: 645 };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DuctData {
     /// Which duct is currently closed
     pub closed_duct: Duct,
-    pub audio_lure: POINT,
+    pub audio_lure: IVec2,
 }
 
 impl DuctData {
     /// Check left duct
-    pub const _DUCT_L_POS: POINT = POINT { x: 500, y: 791 };
+    pub const _DUCT_L_POS: IVec2 = IVec2 { x: 500, y: 791 };
     /// Check right duct
-    pub const _DUCT_R_POS: POINT = POINT { x: 777, y: 791 };
+    pub const _DUCT_R_POS: IVec2 = IVec2 { x: 777, y: 791 };
     /// Left duct button
-    pub const DUCT_L_BTN_POS: POINT = POINT { x: 331, y: 844 };
+    pub const DUCT_L_BTN_POS: IVec2 = IVec2 { x: 331, y: 844 };
     /// Right duct button
-    pub const DUCT_R_BTN_POS: POINT = POINT { x: 1016, y: 844 };
+    pub const DUCT_R_BTN_POS: IVec2 = IVec2 { x: 1016, y: 844 };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -285,22 +294,22 @@ impl GameData {
 /// Important positions on the screen
 impl GameData {
     /// Clock position
-    pub const CLK_POS: POINT = POINT { x: 1807, y: 85 };
+    pub const CLK_POS: IVec2 = IVec2 { x: 1807, y: 85 };
     pub const CLK_10SEC_X: i32 = 1832;
     pub const CLK_SEC_X: i32 = 1849;
     pub const CLK_DECISEC_X: i32 = 1873;
 
-    pub const _TEMPERATURE_POS: POINT = POINT { x: 1818, y: 1012 };
+    pub const _TEMPERATURE_POS: IVec2 = IVec2 { x: 1818, y: 1012 };
 
-    pub const _COINS: POINT = POINT { x: 155, y: 75 };
+    pub const _COINS: IVec2 = IVec2 { x: 155, y: 75 };
 
-    pub const _PWR_POS: POINT = POINT { x: 71, y: 910 };
-    pub const _PWR_USG_POS: POINT = POINT { x: 38, y: 969 };
+    pub const _PWR_POS: IVec2 = IVec2 { x: 71, y: 910 };
+    pub const _PWR_USG_POS: IVec2 = IVec2 { x: 38, y: 969 };
 
-    pub const _NOISE_POS: POINT = POINT { x: 38, y: 1020 };
+    pub const _NOISE_POS: IVec2 = IVec2 { x: 38, y: 1020 };
 
     /// Not really needed since the S key exists...
-    pub const _OPEN_CAM_POS: POINT = POINT { x: 1280, y: 1006 };
+    pub const _OPEN_CAM_POS: IVec2 = IVec2 { x: 1280, y: 1006 };
 }
 
 /// What state we are in (office, checking cameras, ducts, vents)
@@ -701,7 +710,7 @@ impl From<State> for Button {
 }
 
 // This is the list the above enum was referring to
-pub const BTN_POSITIONS: [POINT; 18] = [
+pub const BTN_POSITIONS: [IVec2; 18] = [
     OfficeData::MASK_POS,
     CameraData::RESET_VENT_BTN_POS,
     CameraData::CAM_01_POS,
@@ -712,15 +721,15 @@ pub const BTN_POSITIONS: [POINT; 18] = [
     CameraData::CAM_06_POS,
     CameraData::CAM_07_POS,
     CameraData::CAM_08_POS,
-    POINT {
+    IVec2 {
         x: CameraData::SYS_BTN_X,
         y: CameraData::CAM_SYS_BTN_Y,
     },
-    POINT {
+    IVec2 {
         x: CameraData::SYS_BTN_X,
         y: CameraData::VENT_SYS_BTN_Y,
     },
-    POINT {
+    IVec2 {
         x: CameraData::SYS_BTN_X,
         y: CameraData::DUCT_SYS_BTN_Y,
     },
@@ -733,7 +742,7 @@ pub const BTN_POSITIONS: [POINT; 18] = [
 
 impl Button {
     /// Pick the button position from the list of button positions
-    pub const fn pos(self) -> POINT {
+    pub const fn pos(self) -> IVec2 {
         BTN_POSITIONS[self as usize]
     }
 }
@@ -754,9 +763,9 @@ impl OfficeData {
         const START: i32 = 723;
         const WIDTH: i32 = 585;
         for x in START..START + WIDTH {
-            if screen_data.pixel_color_at(POINT { x, y: Y }).gray() > THRESHOLD {
+            if screen_data.pixel_color_at(IVec2 { x, y: Y }).gray() > THRESHOLD {
                 // 100% of the samples must be 80% matching. Flickering be damned.
-                if screen_data.test_samples_gray(POINT { x, y: Y }, 255, 20) == 5 {
+                if screen_data.test_samples_gray(IVec2 { x, y: Y }, 255, 20) == 5 {
                     self.office_yaw = (x as f64 - START as f64) / WIDTH as f64;
                     history.push(GameStateDelta::OfficeYaw(self.office_yaw));
                     break;
@@ -767,13 +776,13 @@ impl OfficeData {
 
     /// Assumes we are already in the office
     pub fn look_left<const BLOCK_CAP: usize>(&mut self, history: &mut GameStateHistory<BLOCK_CAP>) {
-        history.sim_mouse_goto(POINT { x: 8, y: 540 });
+        history.sim_mouse_goto(IVec2 { x: 8, y: 540 });
         sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
     }
 
     /// Assumes we are already in the office
     fn look_right<const BLOCK_CAP: usize>(&mut self, history: &mut GameStateHistory<BLOCK_CAP>) {
-        history.sim_mouse_goto(POINT { x: 1910, y: 540 });
+        history.sim_mouse_goto(IVec2 { x: 1910, y: 540 });
         sleep(Duration::from_millis(5 * MS_PER_DECISEC as u64));
     }
 
@@ -861,7 +870,7 @@ impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
 
                 State::Duct => StateData::Duct(DuctData {
                     closed_duct: Duct::West,
-                    audio_lure: POINT::default(),
+                    audio_lure: IVec2::default(),
                 }),
             };
         }
@@ -1066,7 +1075,7 @@ pub fn is_nmbb_standing(screen_data: &ScreenData) -> bool {
         g: 28,
         b: 120,
     };
-    const SAMPLE_POS: POINT = POINT { x: 1024, y: 774 };
+    const SAMPLE_POS: IVec2 = IVec2 { x: 1024, y: 774 };
     const THRESHOLD: f64 = 0.98;
     PANTS_COLOR.similarity(screen_data.pixel_color_at(SAMPLE_POS)) > THRESHOLD
 }
