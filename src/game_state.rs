@@ -338,19 +338,17 @@ impl StateData {
 pub struct GameState<const BLOCK_CAP: usize> {
     pub state: StateData,
     pub game: GameData,
-    screen_data: Arc<ScreenDataPair>,
     hist: GameStateHistory<BLOCK_CAP>,
 }
 
 impl<const BLOCK_CAP: usize> GameState<BLOCK_CAP> {
-    pub const fn new(screencap_updated: Arc<ScreenDataPair>) -> Self {
+    pub const fn new() -> Self {
         Self {
             state: StateData::Office(OfficeData {
                 office_yaw: 0.0,
                 is_nmbb_standing: false,
             }),
             game: GameData::new(),
-            screen_data: screencap_updated,
             hist: GameStateHistory::new(),
         }
     }

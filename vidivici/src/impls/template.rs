@@ -34,9 +34,15 @@ impl SHandle for SharedHandle {
         Ok(SharedHandle(PhantomData))
     }
 
-    fn href(&mut self) -> SharedHandleRef<'_> {
+    type Ref<'a> = SharedHandleRef<'a>;
+
+    fn href(&mut self) -> Self::Ref<'_> {
         SharedHandleRef(PhantomData)
     }
+
+    type UInput<'a> = UInputHandle<'a>;
+    type VInput<'a> = VInputHandle<'a>;
+    type Screen<'a> = ScreenHandle<'a>;
 }
 
 /// Depending on the platform, this could be implemented as
@@ -80,8 +86,10 @@ pub(super) const VK_X: i32 = 'X' as i32;
 pub(super) const VK_Z: i32 = 'Z' as i32;
 pub(super) const VK_ESC: i32 = '\x1b' as i32;
 
-impl<'a> UInput<'a> for VInputHandle<'a> {
-    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
+impl<'a> UInput for UInputHandle<'a> {
+    type SharedHandleRef = SharedHandleRef<'a>;
+
+    fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         Ok(Self(PhantomData, shared_handle))
     }
 
@@ -106,8 +114,10 @@ impl Drop for VInputHandle<'_> {
     }
 }
 
-impl<'a> VInput<'a> for VInputHandle<'a> {
-    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
+impl<'a> VInput for VInputHandle<'a> {
+    type SharedHandleRef = SharedHandleRef<'a>;
+
+    fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         Ok(Self(PhantomData, shared_handle))
     }
 
@@ -137,8 +147,10 @@ impl Drop for ScreenHandle<'_> {
     }
 }
 
-impl<'a> Screen<'a> for ScreenHandle<'a> {
-    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
+impl<'a> Screen for ScreenHandle<'a> {
+    type SharedHandleRef = SharedHandleRef<'a>;
+
+    fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         Ok(Self(PhantomData, shared_handle))
     }
 

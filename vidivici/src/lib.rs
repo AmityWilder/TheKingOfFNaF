@@ -73,6 +73,18 @@ pub enum KeyState {
     Down,
 }
 
+impl KeyState {
+    /// The key is not held
+    pub const fn is_up(self) -> bool {
+        matches!(self, Self::Up)
+    }
+
+    /// The key is held
+    pub const fn is_down(self) -> bool {
+        matches!(self, Self::Down)
+    }
+}
+
 /// Virtual keys used by the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VirtualKey {
@@ -159,11 +171,53 @@ pub trait SHandle: Sized {
     /// the user input handle directly.
     fn init() -> Result<Self, Self::InitError>;
 
-    /// Get a [`SharedHandleRef`] for initializing other subsystem handles.
+    /// Depending on the platform, this could be implemented as
+    /// - An [`Rc<RefCell<SharedHandle>>`](`std::rc::Rc`)
+    ///   (the non-implementation of [`Send`]/[`Sync`] makes
+    ///   [`Arc<Mutex<SharedHandle>>`](`std::sync::Arc`) pointless)
+    /// - A shared reference with lifetime `'a` to a [`Clone`]able handle
+    /// - Or a private unit type
+    ///
+    /// May not implement [`Copy`]
+    type Ref<'a>
+    where
+        Self: 'a;
+
+    /// Get a [`Self::Ref`] for initializing other subsystem handles.
     ///
     /// Must be infallible on all platforms.
     /// Failure should occur while initializing, not while referencing.
-    fn href(&mut self) -> SharedHandleRef<'_>;
+    fn href(&mut self) -> Self::Ref<'_>;
+
+    /// The platform [`UInput`] subsystem
+    type UInput<'a>: UInput<SharedHandleRef = Self::Ref<'a>>
+    where
+        Self: 'a;
+
+    /// Initialize the [`UInput`] subsystem
+    fn init_uinput(&mut self) -> Result<Self::UInput<'_>, <Self::UInput<'_> as UInput>::InitError> {
+        Self::UInput::init(self.href())
+    }
+
+    /// The platform [`VInput`] subsystem
+    type VInput<'a>: VInput<SharedHandleRef = Self::Ref<'a>>
+    where
+        Self: 'a;
+
+    /// Initialize the [`VInput`] subsystem
+    fn init_vinput(&mut self) -> Result<Self::VInput<'_>, <Self::VInput<'_> as VInput>::InitError> {
+        Self::VInput::init(self.href())
+    }
+
+    /// The platform [`Screen`] subsystem
+    type Screen<'a>: Screen<SharedHandleRef = Self::Ref<'a>>
+    where
+        Self: 'a;
+
+    /// Initialize the [`Screen`] subsystem
+    fn init_screen(&mut self) -> Result<Self::Screen<'_>, <Self::Screen<'_> as Screen>::InitError> {
+        Self::Screen::init(self.href())
+    }
 }
 
 /// Alias to the platform-specific [`SHandle::init()`]
@@ -174,7 +228,10 @@ pub fn init() -> Result<SharedHandle, <SharedHandle as SHandle>::InitError> {
 /// User input (keyboard/mouse)
 ///
 /// Platforms that separate keyboard and mouse inputs should combine both handles in a tuple.
-pub trait UInput<'a>: Sized {
+pub trait UInput: Sized {
+    /// The platform [`SharedHandle`] ref type
+    type SharedHandleRef;
+
     /// Error returned by [`Self::init`]
     type InitError: std::error::Error = !;
 
@@ -182,7 +239,7 @@ pub trait UInput<'a>: Sized {
     ///
     /// Some platforms do not have a shared handle, and may simply initialize
     /// the user input handle directly.
-    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError>;
+    fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError>;
 
     /// Error returned by [`Self::hint_check_events`]
     type HintCheckEventsError: std::error::Error = !;
@@ -215,7 +272,10 @@ pub trait UInput<'a>: Sized {
 ///
 /// Platforms that have a single handle performing multiple duties should create a handle with
 /// a reference to the shared handle with an implementation for this.
-pub trait VInput<'a>: Sized {
+pub trait VInput: Sized {
+    /// The platform [`SharedHandle`] ref type
+    type SharedHandleRef;
+
     /// Error returned by [`Self::init`]
     type InitError: std::error::Error = !;
 
@@ -223,7 +283,7 @@ pub trait VInput<'a>: Sized {
     ///
     /// Some platforms do not have a shared handle, and may simply initialize
     /// the virtual input handle directly.
-    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError>;
+    fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError>;
 
     /// Error that occurs in [`Self::hint_flush_events`].
     type HintFlushEventsError: std::error::Error = !;
@@ -266,7 +326,10 @@ pub trait VInput<'a>: Sized {
 ///
 /// Platforms that have a single handle performing multiple duties should create a handle with
 /// a reference to the shared handle with an implementation for this.
-pub trait Screen<'a>: Sized {
+pub trait Screen: Sized {
+    /// The platform [`SharedHandle`] ref type
+    type SharedHandleRef;
+
     /// Error returned by [`Self::init`]
     type InitError: std::error::Error = !;
 
@@ -274,7 +337,7 @@ pub trait Screen<'a>: Sized {
     ///
     /// Some platforms do not have a shared handle, and may simply initialize
     /// the screen handle directly.
-    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError>;
+    fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError>;
 
     /// Error returned by [`Self::width`] and [`Self::height`]
     type GetSizeError: std::error::Error = !;

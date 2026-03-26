@@ -2,6 +2,8 @@
 
 #![warn(clippy::undocumented_unsafe_blocks, reason = "audit in-progress")]
 
+use std::mem::ManuallyDrop;
+
 use super::*;
 use windows::{
     Win32::{
@@ -92,9 +94,18 @@ impl SHandle for SharedHandle {
         }
     }
 
-    fn href(&mut self) -> SharedHandleRef<'_> {
-        self
+    type Ref<'a> = SharedHandleRef;
+
+    fn href(&mut self) -> Self::Ref<'_> {
+        ManuallyDrop::new(Self {
+            desktop_hdc: self.desktop_hdc,
+            internal_hdc: self.internal_hdc,
+        })
     }
+
+    type UInput<'a> = UInputHandle;
+    type VInput<'a> = VInputHandle;
+    type Screen<'a> = ScreenHandle;
 }
 
 /// Depending on the platform, this could be implemented as
@@ -105,15 +116,15 @@ impl SHandle for SharedHandle {
 /// - Or a private unit type
 ///
 /// May not implement [`Copy`]
-pub type SharedHandleRef<'a> = &'a SharedHandle;
+pub type SharedHandleRef = ManuallyDrop<SharedHandle>;
 
 /// User input (keyboard/mouse) handle.
 #[derive(Debug)]
-pub struct UInputHandle<'a> {
-    hshared: SharedHandleRef<'a>,
+pub struct UInputHandle {
+    hshared: SharedHandleRef,
 }
 
-impl Drop for UInputHandle<'_> {
+impl Drop for UInputHandle {
     fn drop(&mut self) {
         // If a platform has fallible cleanup: that's a shame.
     }
@@ -149,10 +160,11 @@ impl std::fmt::Display for GetKeyStateError {
 
 impl std::error::Error for GetKeyStateError {}
 
-impl<'a> UInput<'a> for VInputHandle<'a> {
+impl UInput for UInputHandle {
+    type SharedHandleRef = SharedHandleRef;
     type InitError = !;
 
-    fn init(hshared: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
+    fn init(hshared: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         Ok(Self { hshared })
     }
 
@@ -183,11 +195,11 @@ impl<'a> UInput<'a> for VInputHandle<'a> {
 
 /// Virtual input (keyboard/mouse) handle.
 #[derive(Debug)]
-pub struct VInputHandle<'a> {
-    hshared: SharedHandleRef<'a>,
+pub struct VInputHandle {
+    hshared: SharedHandleRef,
 }
 
-impl Drop for VInputHandle<'_> {
+impl Drop for VInputHandle {
     fn drop(&mut self) {
         // If a platform has fallible cleanup: that's a shame.
     }
@@ -205,11 +217,12 @@ impl std::fmt::Display for SendInputError {
 
 impl std::error::Error for SendInputError {}
 
-impl<'a> VInput<'a> for VInputHandle<'a> {
+impl VInput for VInputHandle {
+    type SharedHandleRef = SharedHandleRef;
     type InitError = !;
 
     /// Initialize the virtual input handle from the [shared handle](`SharedHandle`).
-    fn init(hshared: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
+    fn init(hshared: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         Ok(Self { hshared })
     }
 
@@ -283,8 +296,8 @@ impl<'a> VInput<'a> for VInputHandle<'a> {
 
 /// May not implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
 #[derive(Debug)]
-pub struct ScreenHandle<'a> {
-    hshared: SharedHandleRef<'a>,
+pub struct ScreenHandle {
+    hshared: SharedHandleRef,
     bitmap: HBITMAP,
     buffer: Box<[u8]>,
 
@@ -292,7 +305,7 @@ pub struct ScreenHandle<'a> {
     screen_height: i32,
 }
 
-impl Drop for ScreenHandle<'_> {
+impl Drop for ScreenHandle {
     fn drop(&mut self) {
         _ = unsafe { DeleteObject(HGDIOBJ(self.bitmap.0)) }; // Free the bitmap memory to the OS
     }
@@ -322,11 +335,13 @@ impl std::fmt::Display for InitScreenHandleError {
 
 impl std::error::Error for InitScreenHandleError {}
 
-impl<'a> Screen<'a> for ScreenHandle<'a> {
+impl Screen for ScreenHandle {
+    type SharedHandleRef = SharedHandleRef;
+
     type InitError = InitScreenHandleError;
 
     /// Initialize the screen handle from the [shared handle](`SharedHandle`).
-    fn init(hshared: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
+    fn init(hshared: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         let screen_width = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
         let screen_height = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
         if screen_width == 0 || screen_height == 0 {
