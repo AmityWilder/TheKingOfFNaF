@@ -135,14 +135,74 @@ Let $u,v,w$ be vectors and $k$ be a scalar
 ## Commutative
 $$u \bull v = v \bull u$$
 
+### Proof
+$$
+\begin{align*}
+    u \bull v
+        &= u_1v_1 + u_2v_2 + \dots + u_nv_n &\qquad\text{definition of dot product} \\
+        &= v_1u_1 + v_2u_2 + \dots + v_nu_n &\qquad\text{commutative property of multiplication} \\
+        &=  v \bull u &\qquad\text{definition of dot product} \\
+        &&&\square
+\end{align*}
+$$
+
 ## Distributive
 $$u \bull (v + w) = u \bull v + u \bull w$$
 
+### Proof
+$$
+\begin{align*}
+    u \bull (v + w)
+        &= u \bull \langle v_1 + w_1, v_2 + w_2, \dots, v_n + w_n \rangle &\qquad\text{definition of vector addition} \\
+        &= u_1(v_1 + w_1) + u_2(v_2 + w_2) + \dots + u_n(v_n + w_n) &\qquad\text{definition of dot product} \\
+        &= u_1v_1 + u_1w_1 + u_2v_2 + u_2w_2 + \dots + u_nv_n + u_nw_n &\qquad\text{distributive property of multiplication} \\
+        &= u_1v_1 + u_2v_2 + \dots + u_nv_n + u_1w_1 + u_2w_2 + \dots + u_nw_n &\qquad\text{commutative property of addition} \\
+        &= u \bull v + u \bull w &\qquad\text{definition of dot product} \\
+        &&&\square
+\end{align*}
+$$
+
 ## Scalar associative
-$$k(u \bull v) = ku \bull v = u \bull kv$$
+$$k(u \bull v) = ku \bull v$$
+
+### Proof
+$$
+\begin{align*}
+    k(u \bull v)
+        &= k(u_1v_1 + u_2v_2 + \dots + u_nv_n) &\qquad\text{definition of dot product} \\
+        &= ku_1v_1 + ku_2v_2 + \dots + ku_nv_n &\qquad\text{distributive property of multiplication} \\
+        &= (ku_1)v_1 + (ku_2)v_2 + \dots + (ku_n)v_n &\qquad\text{associative property of multiplication} \\
+        &= w_1v_1 + w_2v_2 + \dots + w_nv_n \text{ for some } w=ku &\qquad\text{closure of \(\R\) under multiplication} \\
+        &= w \bull v &\qquad\text{definition of dot product} \\
+        &= ku \bull v &\qquad\text{definition of \(w\)} \\
+        &&&\square
+\end{align*}
+$$
 
 ## Zero
 $$0 \bull u = 0$$
 
+### Proof
+$$
+\begin{align*}
+    0 \bull u
+        &= 0u_1 + 0u_2 + \dots + 0u_n &\qquad\text{definition of dot product} \\
+        &= 0(u_1 + u_2 + \dots + u_n) &\qquad\text{distributive property} \\
+        &= 0 &\qquad\text{zero product property} \\
+        &&&\square
+\end{align*}
+$$
+
 ## Norm
 $$u \bull u = \lVert u \rVert$$
+
+### Proof
+$$
+\begin{align*}
+    \lVert u \rVert
+        &= u_1^2 + u_2^2 + \dots + u_n^2 &\qquad\text{definition of norm} \\
+        &= u_1u_1 + u_2u_2 + \dots + u_nu_n &\qquad x^2 = x \cdot x \\
+        &= u \bull u &\qquad\text{definition of dot product} \\
+        &&&\square
+\end{align*}
+$$
