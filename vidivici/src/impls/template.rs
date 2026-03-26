@@ -15,8 +15,8 @@ use std::marker::PhantomData;
 /// Some impls may require all subsystem handles to belong to a singular shared handle.
 /// In that case, they will all reference this one through a [`SharedHandleRef`].
 ///
-/// - Cannot implement [`Send`] or [`Sync`] because some impls hold mutable pointers.
-/// - Cannot implement [`Clone`] because some impls may risk double-free if duplicated.
+/// - May not implement [`Send`] or [`Sync`] because some impls hold mutable pointers.
+/// - May not implement [`Clone`] because some impls may risk double-free if duplicated.
 /// - Must implement [`Drop`] because most imples with a shared handle will need be cleaned.
 #[derive(Debug)]
 pub struct SharedHandle(PhantomData<*mut ()>);
@@ -27,9 +27,16 @@ impl Drop for SharedHandle {
     }
 }
 
-/// Initialize the shared handle
-pub fn init() -> Result<SharedHandle, !> {
-    Ok(SharedHandle(PhantomData))
+impl SHandle for SharedHandle {
+    type InitError = !;
+
+    fn init() -> Result<Self, Self::InitError> {
+        Ok(SharedHandle(PhantomData))
+    }
+
+    fn href(&mut self) -> SharedHandleRef<'_> {
+        SharedHandleRef(PhantomData)
+    }
 }
 
 /// Depending on the platform, this could be implemented as
@@ -39,13 +46,13 @@ pub fn init() -> Result<SharedHandle, !> {
 /// - A shared reference with lifetime `'a` to a [`Clone`]able handle
 /// - Or a private unit type
 ///
-/// Cannot implement [`Copy`]
+/// May not implement [`Copy`]
 #[derive(Debug)]
 pub struct SharedHandleRef<'a>(PhantomData<&'a ()>);
 
 /// User input (keyboard/mouse) handle.
 ///
-/// Cannot implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
+/// May not implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
 #[derive(Debug)]
 pub struct UInputHandle<'a>(PhantomData<*mut ()>, SharedHandleRef<'a>);
 
@@ -73,18 +80,12 @@ pub(super) const VK_X: i32 = 'X' as i32;
 pub(super) const VK_Z: i32 = 'Z' as i32;
 pub(super) const VK_ESC: i32 = '\x1b' as i32;
 
-impl<'a> UInputHandle<'a> {
-    /// Initialize the user input handle from the [shared handle](`SharedHandle`).
-    ///
-    /// Some platforms do not have a shared handle, and may simply initialize
-    /// the user input handle directly.
-    pub fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, !> {
+impl<'a> UInput<'a> for VInputHandle<'a> {
+    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
         Ok(Self(PhantomData, shared_handle))
     }
-}
 
-impl<'a> super::UInput for VInputHandle<'a> {
-    fn get_key_state(&mut self) -> Result<KeyState, Self::GetKeyStateError> {
+    fn get_key_state(&mut self, _key: VirtualKey) -> Result<KeyState, Self::GetKeyStateError> {
         unimplemented!()
     }
 
@@ -95,7 +96,7 @@ impl<'a> super::UInput for VInputHandle<'a> {
 
 /// Virtual input (keyboard/mouse) handle.
 ///
-/// Cannot implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
+/// May not implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
 #[derive(Debug)]
 pub struct VInputHandle<'a>(PhantomData<*mut ()>, SharedHandleRef<'a>);
 
@@ -105,17 +106,11 @@ impl Drop for VInputHandle<'_> {
     }
 }
 
-impl<'a> VInputHandle<'a> {
-    /// Initialize the virtual input handle from the [shared handle](`SharedHandle`).
-    ///
-    /// Some platforms do not have a shared handle, and may simply initialize
-    /// the virtual input handle directly.
-    pub fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, !> {
+impl<'a> VInput<'a> for VInputHandle<'a> {
+    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
         Ok(Self(PhantomData, shared_handle))
     }
-}
 
-impl<'a> super::VInput for VInputHandle<'a> {
     fn simulate_mouse_event(
         &mut self,
         _event: MouseEvent,
@@ -132,7 +127,7 @@ impl<'a> super::VInput for VInputHandle<'a> {
     }
 }
 
-/// Cannot implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
+/// May not implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
 #[derive(Debug)]
 pub struct ScreenHandle<'a>(PhantomData<*mut ()>, SharedHandleRef<'a>);
 
@@ -142,17 +137,19 @@ impl Drop for ScreenHandle<'_> {
     }
 }
 
-impl<'a> ScreenHandle<'a> {
-    /// Initialize the screen handle from the [shared handle](`SharedHandle`).
-    ///
-    /// Some platforms do not have a shared handle, and may simply initialize
-    /// the screen handle directly.
-    pub fn init(shared_handle: SharedHandleRef<'a>) -> Self {
-        Self(PhantomData, shared_handle)
+impl<'a> Screen<'a> for ScreenHandle<'a> {
+    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError> {
+        Ok(Self(PhantomData, shared_handle))
     }
-}
 
-impl<'a> super::Screen for ScreenHandle<'a> {
+    fn width(&mut self) -> Result<i32, Self::GetPixelError> {
+        unimplemented!()
+    }
+
+    fn height(&mut self) -> Result<i32, Self::GetPixelError> {
+        unimplemented!()
+    }
+
     fn get_pixel(&mut self, _pt: IVec2) -> Result<ColorRGB, Self::GetPixelError> {
         unimplemented!()
     }

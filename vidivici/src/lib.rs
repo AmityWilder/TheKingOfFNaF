@@ -1,4 +1,11 @@
 //! Cross-platform vision (vidi) and action (vici) library
+//!
+//! ```
+//! let hshared = init();
+//! let vinput = VInputHandle::init(hshared.href());
+//! let uinput = UInputHandle::init(hshared.href());
+//! let screen = ScreenHandle::init(hshared.href());
+//! ```
 
 #![deny(
     clippy::undocumented_unsafe_blocks,
@@ -24,12 +31,12 @@
 macro_rules! platform_impl {
     (
         $(#[$m:meta])*
-        $vis:vis mod $module:ident = match cfg {
-            $(#[$($cfg:tt)+] => $path:literal,)+
+        $vis:vis mod $module:ident = match {
+            $(cfg($($cfg:tt)+) => $path:literal,)*
             _ => $default_path:literal $(,)?
         };
     ) => {
-        $(#[cfg_attr($($cfg)+, path = $path)])+
+        $(#[cfg_attr($($cfg)+, path = $path)])*
         #[cfg_attr(not(any($($($cfg)+),*)), path = $default_path)]
         $(#[$m])*
         $vis mod $module;
@@ -38,8 +45,8 @@ macro_rules! platform_impl {
 
 platform_impl! {
     #[allow(unsafe_code)]
-    pub mod platform = match cfg {
-        #[windows] => "impls/windows.rs",
+    pub mod platform = match {
+        cfg(windows) => "impls/windows.rs",
         _ => "impls/template.rs",
     };
 }
@@ -59,83 +66,50 @@ pub use platform::*;
 /// The current state of a key or button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum KeyState {
-    /// Inactive
+    /// Depressed
     #[default]
     Up,
-    /// Up -> Down
-    Press,
     /// Held
     Down,
-    /// Down -> Up
-    Release,
 }
 
 /// Virtual keys used by the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VirtualKey {
     /// The key that toggles the front vent
-    FrontVent = VK_W as isize,
+    FrontVent = platform::VK_W as isize,
     /// The key that toggles the left door
-    LeftDoor = VK_A as isize,
+    LeftDoor = platform::VK_A as isize,
     /// The key that toggles the camera monitor
-    CameraToggle = VK_S as isize,
+    CameraToggle = platform::VK_S as isize,
     /// The key that toggles the right door
-    RightDoor = VK_D as isize,
+    RightDoor = platform::VK_D as isize,
     /// The key that toggles the right vent
-    RightVent = VK_F as isize,
+    RightVent = platform::VK_F as isize,
     /// The key that catches Old Man Consequences fish
-    CatchFish = VK_C as isize,
+    CatchFish = platform::VK_C as isize,
     /// The key that closes ads
-    CloseAd = VK_ENTER as isize,
+    CloseAd = platform::VK_ENTER as isize,
     /// The key that toggles the desk fan
-    DeskFan = VK_SPACE as isize,
+    DeskFan = platform::VK_SPACE as isize,
     /// The 1 key
-    One = VK_1 as isize,
+    One = platform::VK_1 as isize,
     /// The 2 key
-    Two = VK_2 as isize,
+    Two = platform::VK_2 as isize,
     /// The 3 key
-    Three = VK_3 as isize,
+    Three = platform::VK_3 as isize,
     /// The 4 key
-    Four = VK_4 as isize,
+    Four = platform::VK_4 as isize,
     /// The 5 key
-    Five = VK_5 as isize,
+    Five = platform::VK_5 as isize,
     /// The 6 key
-    Six = VK_6 as isize,
+    Six = platform::VK_6 as isize,
     /// The X key (I forget what this does)
-    X = VK_X as isize,
+    X = platform::VK_X as isize,
     /// The key that activates the flashlight while held
-    Flashlight = VK_Z as isize,
+    Flashlight = platform::VK_Z as isize,
     /// The key that exits the game
-    Exit = VK_ESC as isize,
-}
-
-/// User input (keyboard/mouse)
-///
-/// Platforms that separate keyboard and mouse inputs should combine both handles in a tuple.
-pub trait UInput {
-    /// Error returned by [`Self::hint_check_events`]
-    type HintCheckEventsError: std::error::Error = !;
-
-    /// Error returned by [`Self::get_key_state`]
-    type GetKeyStateError: std::error::Error = !;
-
-    /// Error returned by [`Self::get_mouse_pos`]
-    type GetMousePosError: std::error::Error = !;
-
-    /// Hint the key events to be tested and buffered, for platforms where
-    /// all key events are checked at once.
-    fn hint_check_events(&mut self) -> Result<(), Self::HintCheckEventsError> {
-        Ok(())
-    }
-
-    /// Check for the current status of a particular virtual key
-    fn get_key_state(&mut self) -> Result<KeyState, Self::GetKeyStateError>;
-
-    /// Read the current mouse position.
-    ///
-    /// Note that platforms with buffered inputs may have updated this no
-    /// more recently than the last call to [`Self::hint_check_events`].
-    fn get_mouse_pos(&mut self) -> Result<IVec2, Self::GetMousePosError>;
+    Exit = platform::VK_ESC as isize,
 }
 
 /// Mouse movement, left button, or both
@@ -155,21 +129,104 @@ pub enum MouseEvent {
     GotoAndBtn(IVec2, KeyState),
 }
 
+impl MouseEvent {
+    /// Split a [`MouseEvent`] into a position and key state.
+    ///
+    /// At least one of these is guaranteed to be [`Some`].
+    #[inline]
+    pub const fn unzip(self) -> (Option<IVec2>, Option<KeyState>) {
+        (
+            match self {
+                MouseEvent::Goto(pt) | MouseEvent::GotoAndBtn(pt, _) => Some(pt),
+                _ => None,
+            },
+            match self {
+                MouseEvent::Btn(s) | MouseEvent::GotoAndBtn(_, s) => Some(s),
+                _ => None,
+            },
+        )
+    }
+}
+
+/// Shared handle
+pub trait SHandle: Sized {
+    /// Error returned by [`Self::init`]
+    type InitError: std::error::Error = !;
+
+    /// Initialize the user input handle from the [shared handle](`SharedHandle`).
+    ///
+    /// Some platforms do not have a shared handle, and may simply initialize
+    /// the user input handle directly.
+    fn init() -> Result<Self, Self::InitError>;
+
+    /// Get a [`SharedHandleRef`] for initializing other subsystem handles.
+    ///
+    /// Must be infallible on all platforms.
+    /// Failure should occur while initializing, not while referencing.
+    fn href(&mut self) -> SharedHandleRef<'_>;
+}
+
+/// Alias to the platform-specific [`SHandle::init()`]
+pub fn init() -> Result<SharedHandle, <SharedHandle as SHandle>::InitError> {
+    <SharedHandle as SHandle>::init()
+}
+
+/// User input (keyboard/mouse)
+///
+/// Platforms that separate keyboard and mouse inputs should combine both handles in a tuple.
+pub trait UInput<'a>: Sized {
+    /// Error returned by [`Self::init`]
+    type InitError: std::error::Error = !;
+
+    /// Initialize the user input subsystem from the shared handle.
+    ///
+    /// Some platforms do not have a shared handle, and may simply initialize
+    /// the user input handle directly.
+    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError>;
+
+    /// Error returned by [`Self::hint_check_events`]
+    type HintCheckEventsError: std::error::Error = !;
+
+    /// Hint the key events to be tested and buffered, for platforms where
+    /// all key events are checked at once.
+    fn hint_check_events(&mut self) -> Result<(), Self::HintCheckEventsError> {
+        Ok(())
+    }
+
+    /// Error returned by [`Self::get_key_state`]
+    type GetKeyStateError: std::error::Error = !;
+
+    /// Check for the current status of a particular virtual key
+    fn get_key_state(&mut self, key: VirtualKey) -> Result<KeyState, Self::GetKeyStateError>;
+
+    /// Error returned by [`Self::get_mouse_pos`]
+    type GetMousePosError: std::error::Error = !;
+
+    /// Read the current mouse position.
+    ///
+    /// Note that platforms with buffered inputs may have updated this no
+    /// more recently than the last call to [`Self::hint_check_events`].
+    fn get_mouse_pos(&mut self) -> Result<IVec2, Self::GetMousePosError>;
+}
+
 /// Virtual input (keyboard/mouse)
 ///
 /// Platforms that separate virtual keyboard and mouse inputs should combine them as a tuple.
 ///
 /// Platforms that have a single handle performing multiple duties should create a handle with
 /// a reference to the shared handle with an implementation for this.
-pub trait VInput {
+pub trait VInput<'a>: Sized {
+    /// Error returned by [`Self::init`]
+    type InitError: std::error::Error = !;
+
+    /// Initialize the virtual input subsystem from the shared handle.
+    ///
+    /// Some platforms do not have a shared handle, and may simply initialize
+    /// the virtual input handle directly.
+    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError>;
+
     /// Error that occurs in [`Self::hint_flush_events`].
     type HintFlushEventsError: std::error::Error = !;
-
-    /// Error that occurs in [`Self::simulate_mouse_event`].
-    type SimulateMouseEventError: std::error::Error = !;
-
-    /// Error that occurs in [`Self::simulate_key_event`].
-    type SimulateKeyEventError: std::error::Error = !;
 
     /// Hint for the buffered key events to be sent all at once now,
     /// for platforms that batch input events.
@@ -180,12 +237,18 @@ pub trait VInput {
         Ok(())
     }
 
+    /// Error that occurs in [`Self::simulate_mouse_event`].
+    type SimulateMouseEventError: std::error::Error = !;
+
     /// Move the mouse to the specified position and set the left mouse
     /// button to the specified state.
     fn simulate_mouse_event(
         &mut self,
         event: MouseEvent,
     ) -> Result<(), Self::SimulateMouseEventError>;
+
+    /// Error that occurs in [`Self::simulate_key_event`].
+    type SimulateKeyEventError: std::error::Error = !;
 
     /// Set each key in `keys` to `state`.
     ///
@@ -203,15 +266,27 @@ pub trait VInput {
 ///
 /// Platforms that have a single handle performing multiple duties should create a handle with
 /// a reference to the shared handle with an implementation for this.
-pub trait Screen {
+pub trait Screen<'a>: Sized {
+    /// Error returned by [`Self::init`]
+    type InitError: std::error::Error = !;
+
+    /// Initialize the screen subsystem from the shared handle.
+    ///
+    /// Some platforms do not have a shared handle, and may simply initialize
+    /// the screen handle directly.
+    fn init(shared_handle: SharedHandleRef<'a>) -> Result<Self, Self::InitError>;
+
+    /// Error returned by [`Self::width`] and [`Self::height`]
+    type GetSizeError: std::error::Error = !;
+
+    /// Width of the screen in pixels
+    fn width(&mut self) -> Result<i32, Self::GetSizeError>;
+
+    /// Height of the screen in pixels
+    fn height(&mut self) -> Result<i32, Self::GetSizeError>;
+
     /// Error returned by [`Self::hint_refresh_screencap`]
     type HintRefreshScreencapError: std::error::Error = !;
-
-    /// Error returned by [`Self::get_pixel`]
-    type GetPixelError: std::error::Error = !;
-
-    /// Error returned by [`Self::get_region`] (default implementation calls [`Self::get_pixel_rgb`])
-    type GetRegionError: std::error::Error = Self::GetPixelError;
 
     /// Hint the screenshot to be updated.
     ///
@@ -221,11 +296,17 @@ pub trait Screen {
         Ok(())
     }
 
+    /// Error returned by [`Self::get_pixel`]
+    type GetPixelError: std::error::Error = !;
+
     /// Read the color of the pixel at `pt`
     ///
     /// `self` is mutable in case the platform has to buffer the pixels
     /// on-demand.
     fn get_pixel(&mut self, pt: IVec2) -> Result<ColorRGB, Self::GetPixelError>;
+
+    /// Error returned by [`Self::get_region`] (default implementation calls [`Self::get_pixel_rgb`])
+    type GetRegionError: std::error::Error = Self::GetPixelError;
 
     /// Copies all the pixels in a region of the screen to `buffer`.
     /// By default, this calls [`Self::get_pixel_rgb`] for each pixel.
