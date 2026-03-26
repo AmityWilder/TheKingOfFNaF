@@ -114,17 +114,22 @@ darn...
 
 what about the dot product of two normalized vectors?
 
-Note: "$\bull$" here means dot product, NOT multiplication
 $$
 \begin{align*}
     \hat{u} \bull \hat{v}
-        &= \frac{u}{\lvert u \rvert} \bull \frac{v}{\lvert v \rvert} & \text{definition of unit vector} \\
-        &= \left(\frac{u_x}{\lvert u \rvert}\right)\left(\frac{v_x}{\lvert v \rvert}\right) + \left(\frac{u_y}{\lvert u \rvert}\right)\left(\frac{v_y}{\lvert v \rvert}\right) + \left(\frac{u_z}{\lvert u \rvert}\right)\left(\frac{v_z}{\lvert v \rvert}\right) & \text{definition of dot product} \\
-        &= \frac{u_xv_x}{\lvert u \rvert\lvert v \rvert} + \frac{u_yv_y}{\lvert u \rvert\lvert v \rvert} + \frac{u_zv_z}{\lvert u \rvert\lvert v \rvert} &\text{multiply fractions} \\
-        &= \frac{u_xv_x+u_yv_y+u_zv_z}{\lvert u \rvert\lvert v \rvert} &\text{shared denominator} \\
-        &= \frac{u \bull v}{\lvert u \rvert\lvert v \rvert} &\text{definition of dot product} \\
-        &= \frac{u \bull v}{\sqrt{\lVert u \rVert}\sqrt{\lVert v \rVert}} \\
-        &= \frac{u \bull v}{\sqrt{\lVert u \rVert\lVert v \rVert}} \\
+        &= \frac{u}{\lvert u \rvert} \bull \frac{v}{\lvert v \rvert} & \text{definition of unit vector} \\[1em]
+        &= \frac{1}{\lvert u \rvert}u \bull \frac{1}{\lvert v \rvert}v & \text{fraction as coefficient} \\[1em]
+        &= \left(\frac{1}{\lvert u \rvert}\right)\left(u \bull \frac{1}{\lvert v \rvert}v\right) & \text{scalar associative property} \\[1em]
+        &= \left(\frac{1}{\lvert u \rvert}\right)\left(\left(\frac{1}{\lvert v \rvert}\right)(u \bull v)\right) & \text{scalar associative property} \\[1em]
+        &= \left(\frac{1}{\lvert u \rvert}\right)\left(\frac{1}{\lvert v \rvert}\right)(u \bull v) & \text{associative property of multiplication} \\[1em]
+        &= \frac{1}{\lvert u \rvert\lvert v \rvert}(u \bull v) & \text{product of fractions} \\[1em]
+        &= \frac{u \bull v}{\lvert u \rvert\lvert v \rvert} & \text{coefficient as fraction} \\[1em]
+        &= \frac{u \bull v}{\sqrt{\lVert u \rVert}\sqrt{\lVert v \rVert}} & \text{definition of vector magnitude} \\[1em]
+        &= \frac{u \bull v}{\sqrt{\lVert u \rVert\lVert v \rVert}} & \text{product of square roots} \\[1em]
+        &= \frac{u \bull v}{\sqrt{(u \bull u)(v \bull v)}} & \text{dot and norm} \\[1em]
+        &= \frac{\sqrt{(u \bull v)^2}}{\sqrt{(u \bull u)(v \bull v)}} & \sqrt{x^2} = x \\[1em]
+        &= \frac{\sqrt{(u \bull v)(u \bull v)}}{\sqrt{(u \bull u)(v \bull v)}} & x^2 = x \cdot x \\[1em]
+        &= \sqrt{\frac{(u \bull v)(u \bull v)}{(u \bull u)(v \bull v)}} & \text{square root of fractions} \\[1em]
 \end{align*}
 $$
 
