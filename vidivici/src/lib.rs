@@ -179,43 +179,35 @@ pub trait SHandle: Sized {
     /// - Or a private unit type
     ///
     /// May not implement [`Copy`]
-    type Ref<'a>
-    where
-        Self: 'a;
+    type Ref;
 
     /// Get a [`Self::Ref`] for initializing other subsystem handles.
     ///
     /// Must be infallible on all platforms.
     /// Failure should occur while initializing, not while referencing.
-    fn href(&mut self) -> Self::Ref<'_>;
+    fn href(&mut self) -> Self::Ref;
 
     /// The platform [`UInput`] subsystem
-    type UInput<'a>: UInput<SharedHandleRef = Self::Ref<'a>>
-    where
-        Self: 'a;
+    type UInput: UInput<SharedHandleRef = Self::Ref>;
 
     /// Initialize the [`UInput`] subsystem
-    fn init_uinput(&mut self) -> Result<Self::UInput<'_>, <Self::UInput<'_> as UInput>::InitError> {
+    fn init_uinput(&mut self) -> Result<Self::UInput, <Self::UInput as UInput>::InitError> {
         Self::UInput::init(self.href())
     }
 
     /// The platform [`VInput`] subsystem
-    type VInput<'a>: VInput<SharedHandleRef = Self::Ref<'a>>
-    where
-        Self: 'a;
+    type VInput: VInput<SharedHandleRef = Self::Ref>;
 
     /// Initialize the [`VInput`] subsystem
-    fn init_vinput(&mut self) -> Result<Self::VInput<'_>, <Self::VInput<'_> as VInput>::InitError> {
+    fn init_vinput(&mut self) -> Result<Self::VInput, <Self::VInput as VInput>::InitError> {
         Self::VInput::init(self.href())
     }
 
     /// The platform [`Screen`] subsystem
-    type Screen<'a>: Screen<SharedHandleRef = Self::Ref<'a>>
-    where
-        Self: 'a;
+    type Screen: Screen<SharedHandleRef = Self::Ref>;
 
     /// Initialize the [`Screen`] subsystem
-    fn init_screen(&mut self) -> Result<Self::Screen<'_>, <Self::Screen<'_> as Screen>::InitError> {
+    fn init_screen(&mut self) -> Result<Self::Screen, <Self::Screen as Screen>::InitError> {
         Self::Screen::init(self.href())
     }
 }
@@ -366,7 +358,7 @@ pub trait Screen: Sized {
     ///
     /// `self` is mutable in case the platform has to buffer the pixels
     /// on-demand.
-    fn get_pixel(&mut self, pt: IVec2) -> Result<ColorRGB, Self::GetPixelError>;
+    fn get_pixel(&mut self, pt: IVec2) -> Result<ColorRgb, Self::GetPixelError>;
 
     /// Error returned by [`Self::get_region`] (default implementation calls [`Self::get_pixel_rgb`])
     type GetRegionError: std::error::Error = Self::GetPixelError;
@@ -383,7 +375,7 @@ pub trait Screen: Sized {
     fn get_region(
         &mut self,
         rgn: IRect,
-        buffer: &mut [ColorRGB],
+        buffer: &mut [ColorRgb],
     ) -> Result<usize, Self::GetPixelError> {
         let rgn = rgn.into_iter();
         let area = match rgn.size_hint() {

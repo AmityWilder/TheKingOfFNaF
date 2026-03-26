@@ -34,33 +34,34 @@ impl SHandle for SharedHandle {
         Ok(SharedHandle(PhantomData))
     }
 
-    type Ref<'a> = SharedHandleRef<'a>;
+    type Ref = SharedHandleRef;
 
-    fn href(&mut self) -> Self::Ref<'_> {
+    fn href(&mut self) -> Self::Ref {
         SharedHandleRef(PhantomData)
     }
 
-    type UInput<'a> = UInputHandle<'a>;
-    type VInput<'a> = VInputHandle<'a>;
-    type Screen<'a> = ScreenHandle<'a>;
+    type UInput = UInputHandle;
+    type VInput = VInputHandle;
+    type Screen = ScreenHandle;
 }
 
 /// Depending on the platform, this could be implemented as
 /// - An [`Rc<RefCell<SharedHandle>>`](`std::rc::Rc`)
 ///   (the non-implementation of [`Send`]/[`Sync`] makes
 ///   [`Arc<Mutex<SharedHandle>>`](`std::sync::Arc`) pointless)
-/// - A shared reference with lifetime `'a` to a [`Clone`]able handle
+/// - A [`ManuallyDrop`](`std::mem::ManuallyDrop`) clone of a
+///   duplicable handle (only the original should drop)
 /// - Or a private unit type
 ///
 /// May not implement [`Copy`]
 #[derive(Debug)]
-pub struct SharedHandleRef<'a>(PhantomData<&'a ()>);
+pub struct SharedHandleRef(PhantomData<&'a ()>);
 
 /// User input (keyboard/mouse) handle.
 ///
 /// May not implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
 #[derive(Debug)]
-pub struct UInputHandle<'a>(PhantomData<*mut ()>, SharedHandleRef<'a>);
+pub struct UInputHandle(PhantomData<*mut ()>, SharedHandleRef);
 
 impl Drop for UInputHandle<'_> {
     fn drop(&mut self) {
@@ -86,8 +87,8 @@ pub(super) const VK_X: i32 = 'X' as i32;
 pub(super) const VK_Z: i32 = 'Z' as i32;
 pub(super) const VK_ESC: i32 = '\x1b' as i32;
 
-impl<'a> UInput for UInputHandle<'a> {
-    type SharedHandleRef = SharedHandleRef<'a>;
+impl UInput for UInputHandle {
+    type SharedHandleRef = SharedHandleRef;
 
     fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         Ok(Self(PhantomData, shared_handle))
@@ -106,7 +107,7 @@ impl<'a> UInput for UInputHandle<'a> {
 ///
 /// May not implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
 #[derive(Debug)]
-pub struct VInputHandle<'a>(PhantomData<*mut ()>, SharedHandleRef<'a>);
+pub struct VInputHandle(PhantomData<*mut ()>, SharedHandleRef);
 
 impl Drop for VInputHandle<'_> {
     fn drop(&mut self) {
@@ -114,8 +115,8 @@ impl Drop for VInputHandle<'_> {
     }
 }
 
-impl<'a> VInput for VInputHandle<'a> {
-    type SharedHandleRef = SharedHandleRef<'a>;
+impl VInput for VInputHandle {
+    type SharedHandleRef = SharedHandleRef;
 
     fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         Ok(Self(PhantomData, shared_handle))
@@ -139,7 +140,7 @@ impl<'a> VInput for VInputHandle<'a> {
 
 /// May not implement [`Send`], [`Sync`], or [`Clone`]. Must implement [`Drop`].
 #[derive(Debug)]
-pub struct ScreenHandle<'a>(PhantomData<*mut ()>, SharedHandleRef<'a>);
+pub struct ScreenHandle(PhantomData<*mut ()>, SharedHandleRef);
 
 impl Drop for ScreenHandle<'_> {
     fn drop(&mut self) {
@@ -147,8 +148,8 @@ impl Drop for ScreenHandle<'_> {
     }
 }
 
-impl<'a> Screen for ScreenHandle<'a> {
-    type SharedHandleRef = SharedHandleRef<'a>;
+impl Screen for ScreenHandle {
+    type SharedHandleRef = SharedHandleRef;
 
     fn init(shared_handle: Self::SharedHandleRef) -> Result<Self, Self::InitError> {
         Ok(Self(PhantomData, shared_handle))

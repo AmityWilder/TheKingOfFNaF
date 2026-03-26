@@ -1,9 +1,9 @@
 //! Computer Vision
 
 use crate::{DECISECS_PER_SEC, SECS_PER_MIN, game_state::GameData};
-use color::{CHANNELS_PER_COLOR, CNorm, ColorRGB};
+use color::{CHANNELS_PER_COLOR, Vector3Rgb};
 use std::sync::nonpoison::{Condvar, Mutex};
-use vidivici::IVec2;
+use vidivici::{ColorRgb, IVec2};
 
 pub mod color;
 
@@ -18,10 +18,10 @@ impl ScreenData {
         Self { data, width }
     }
 
-    pub fn pixel_color_at(&self, pos: IVec2) -> ColorRGB {
+    pub fn pixel_color_at(&self, pos: IVec2) -> ColorRgb {
         let index: usize = CHANNELS_PER_COLOR * ((pos.y * self.width) + pos.x) as usize;
 
-        ColorRGB {
+        ColorRgb {
             r: self.data[index + 2],
             g: self.data[index + 1],
             b: self.data[index],
@@ -149,11 +149,11 @@ impl ScreenData {
     /// - `threshold`: 0..1 double value for the minimum similarity required to consider a sample point a "match"
     ///
     /// returns: Total number of sample points which exceeded the threshold
-    pub fn test_samples(&self, center: IVec2, compare: CNorm, threshold: f64) -> i32 {
+    pub fn test_samples(&self, center: IVec2, compare: Vector3Rgb, threshold: f64) -> i32 {
         let mut match_count = 0;
         for sample_point in generate_sample_points(center, 4) {
-            let sample = self.pixel_color_at(sample_point).normalized();
-            if sample.normalized().dot(compare) > threshold {
+            let sample = Vector3Rgb::from(self.pixel_color_at(sample_point));
+            if sample.normalized().dot(&compare) > threshold {
                 match_count += 1;
             }
         }

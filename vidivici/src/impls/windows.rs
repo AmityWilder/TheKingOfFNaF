@@ -94,18 +94,18 @@ impl SHandle for SharedHandle {
         }
     }
 
-    type Ref<'a> = SharedHandleRef;
+    type Ref = SharedHandleRef;
 
-    fn href(&mut self) -> Self::Ref<'_> {
+    fn href(&mut self) -> Self::Ref {
         ManuallyDrop::new(Self {
             desktop_hdc: self.desktop_hdc,
             internal_hdc: self.internal_hdc,
         })
     }
 
-    type UInput<'a> = UInputHandle;
-    type VInput<'a> = VInputHandle;
-    type Screen<'a> = ScreenHandle;
+    type UInput = UInputHandle;
+    type VInput = VInputHandle;
+    type Screen = ScreenHandle;
 }
 
 /// Depending on the platform, this could be implemented as
@@ -258,9 +258,10 @@ impl VInput for VInputHandle {
             },
         };
         if unsafe { SendInput(&[input], size_of::<INPUT>() as i32) } == 0 {
-            return Err(SendInputError(unsafe { GetLastError() }.to_hresult()));
+            Err(SendInputError(unsafe { GetLastError() }.to_hresult()))
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     type SimulateKeyEventError = SendInputError;
@@ -436,10 +437,10 @@ impl Screen for ScreenHandle {
         Ok(self.screen_height)
     }
 
-    fn get_pixel(&mut self, pt: IVec2) -> Result<ColorRGB, Self::GetPixelError> {
+    fn get_pixel(&mut self, pt: IVec2) -> Result<ColorRgb, Self::GetPixelError> {
         let index: usize = 4 * ((pt.y * self.screen_width) + pt.x) as usize;
 
-        Ok(ColorRGB {
+        Ok(ColorRgb {
             r: self.buffer[index + 2],
             g: self.buffer[index + 1],
             b: self.buffer[index],
@@ -449,7 +450,7 @@ impl Screen for ScreenHandle {
     fn get_region(
         &mut self,
         _rgn: IRect,
-        _buffer: &mut [ColorRGB],
+        _buffer: &mut [ColorRgb],
     ) -> Result<usize, Self::GetPixelError> {
         todo!() // definitely possible, but I'm not sure how to do it yet...
     }

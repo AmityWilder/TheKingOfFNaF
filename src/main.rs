@@ -53,23 +53,23 @@ const MS_PER_DECISEC: u8 = 100;
 mod clr {
     use super::*;
 
-    pub(super) const SYS_BTN_COLOR: ColorRGB = ColorRGB {
+    pub(super) const SYS_BTN_COLOR: ColorRgb = ColorRgb {
         r: 40,
         g: 152,
         b: 120,
     };
 
-    pub static SYS_BTN_COLOR_NRM: std::sync::LazyLock<CNorm> =
-        std::sync::LazyLock::new(|| CNorm::from(SYS_BTN_COLOR).normalized());
+    pub static SYS_BTN_COLOR_NRM: std::sync::LazyLock<Vector3Rgb> =
+        std::sync::LazyLock::new(|| Vector3Rgb::from(SYS_BTN_COLOR).normalized());
 
-    pub(super) const CAM_BTN_COLOR: ColorRGB = ColorRGB {
+    pub(super) const CAM_BTN_COLOR: ColorRgb = ColorRgb {
         r: 136,
         g: 172,
         b: 0,
     };
 
-    pub static CAM_BTN_COLOR_NRM: std::sync::LazyLock<CNorm> =
-        std::sync::LazyLock::new(|| CNorm::from(CAM_BTN_COLOR).normalized());
+    pub static CAM_BTN_COLOR_NRM: std::sync::LazyLock<Vector3Rgb> =
+        std::sync::LazyLock::new(|| Vector3Rgb::from(CAM_BTN_COLOR).normalized());
 }
 
 struct Lifeline<'a>(&'a AtomicBool);

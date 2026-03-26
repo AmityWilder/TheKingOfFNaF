@@ -2,7 +2,7 @@
 
 /// 24-bit RGB color
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct ColorRGB {
+pub struct ColorRgb {
     /// Red
     pub r: u8,
     /// Green
@@ -11,7 +11,7 @@ pub struct ColorRGB {
     pub b: u8,
 }
 
-impl ColorRGB {
+impl ColorRgb {
     /// Average magnitude of components
     pub const fn gray(&self) -> u8 {
         ((self.r as u16 + self.g as u16 + self.b as u16) / 3) as u8

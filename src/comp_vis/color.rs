@@ -1,54 +1,90 @@
 //! Color analysis
 
-use vidivici::ColorRGB;
+use vidivici::ColorRgb;
 
 /// Bitmap channels, not [`ColorRGB`] channels
 pub const CHANNELS_PER_COLOR: usize = 4;
 
+/// Components guaranteed to be (0,1] and have a total magnitude of 1
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct UnitVector3Rgb {
+    // fields are private so callers cannot break the magnitude promise
+    r: f64,
+    g: f64,
+    b: f64,
+}
+
+impl UnitVector3Rgb {
+    pub const fn mag(&self) -> f64 {
+        debug_assert!(
+            // dont need to sqrt because 1^2 = 1
+            (1.0 - self.r * self.r + self.g * self.g + self.b * self.b).abs() <= f64::EPSILON,
+            "normalized vector magnitude should be within epsilon of 1"
+        );
+        1.0
+    }
+
+    /// Better for determining how close a color is to another, regardless of the scale. (brightness/darkness)
+    ///
+    /// Result will be between -1 and +1 inclusively
+    pub const fn dot(&self, rhs: &Self) -> f64 {
+        self.r * rhs.r + self.g * rhs.g + self.b * rhs.b
+    }
+}
+
 /// Normalized RGB color
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct CNorm {
+pub struct Vector3Rgb {
     pub r: f64,
     pub g: f64,
     pub b: f64,
 }
 
-impl CNorm {
-    /// Normalize the color like a vector (necessary for performing dot product properly)
-    pub fn normalized(&self) -> Self {
-        let inv_len: f64 = 1.0 / (self.r * self.r + self.g * self.g + self.b * self.b).sqrt();
-        Self {
-            r: self.r * inv_len,
-            g: self.g * inv_len,
-            b: self.b * inv_len,
-        }
-    }
-
-    /// Better for determining how close a color is to another, regardless of the scale. (brightness/darkness)
-    pub const fn dot(&self, rhs: Self) -> f64 {
+impl Vector3Rgb {
+    pub const fn dot(&self, rhs: &Self) -> f64 {
         self.r * rhs.r + self.g * rhs.g + self.b * rhs.b
     }
 
-    // Convert the color components from 0..=255 to 0.0..=1.0
-    pub const fn normalized(&self) -> CNorm {
-        const INV_BYTE_MAX: f64 = 1.0 / 255.0;
-        CNorm {
-            r: self.r as f64 * INV_BYTE_MAX,
-            g: self.g as f64 * INV_BYTE_MAX,
-            b: self.b as f64 * INV_BYTE_MAX,
-        }
+    /// Square of magnitude - the norm
+    pub const fn mag_sqr(&self) -> f64 {
+        self.dot(self)
     }
 
-    pub fn similarity(&self, other: ColorRGB) -> f64 {
-        self.normalized().dot(other.normalized())
+    /// Magnitude
+    pub fn mag(&self) -> f64 {
+        self.mag_sqr().sqrt()
+    }
+
+    /// Normalize the color like a vector (necessary for performing dot product properly)
+    ///
+    /// Returns [`None`] if the vector cannot be normalized
+    pub fn normalized(&self) -> Option<UnitVector3Rgb> {
+        let mag_sqr = self.mag_sqr();
+        if !(mag_sqr.is_normal() && mag_sqr > 0.0) {
+            return None;
+        }
+        let inv_mag: f64 = 1.0 / mag_sqr.sqrt();
+        if inv_mag.is_normal() {
+            let r = self.r * inv_mag;
+            let g = self.g * inv_mag;
+            let b = self.b * inv_mag;
+            debug_assert!(
+                // dont need to sqrt because 1^2 = 1
+                (1.0 - Self { r, g, b }.mag_sqr()).abs() <= f64::EPSILON,
+                "normalized vector magnitude should be within epsilon of 1"
+            );
+            Some(UnitVector3Rgb { r, g, b })
+        } else {
+            None
+        }
     }
 }
 
-impl From<ColorRGB> for CNorm {
+impl From<ColorRgb> for Vector3Rgb {
     /// Convert the color components from 0..=255 to 0.0..=1.0
-    fn from(value: ColorRGB) -> Self {
+    fn from(value: ColorRgb) -> Self {
         const INV_BYTE_MAX: f64 = 1.0 / 255.0;
-        CNorm {
+        Vector3Rgb {
             r: value.r as f64 * INV_BYTE_MAX,
             g: value.g as f64 * INV_BYTE_MAX,
             b: value.b as f64 * INV_BYTE_MAX,
@@ -57,7 +93,7 @@ impl From<ColorRGB> for CNorm {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct ColorHSL {
+pub struct ColorHsl {
     /// A degree on the color wheel [0..360]
     pub hue: f64,
     /// Percentage of color [0..100]
@@ -66,9 +102,9 @@ pub struct ColorHSL {
     pub lum: f64,
 }
 
-impl From<ColorRGB> for ColorHSL {
-    fn from(value: ColorRGB) -> Self {
-        let col = value.normalized();
+impl From<ColorRgb> for ColorHsl {
+    fn from(value: ColorRgb) -> Self {
+        let col = Vector3Rgb::from(value);
 
         let cmax: f64 = col.r.max(col.g.max(col.b));
         let cmin: f64 = col.r.max(col.g.min(col.b));
@@ -105,6 +141,6 @@ impl From<ColorRGB> for ColorHSL {
         };
 
         // Finished
-        ColorHSL { hue, sat, lum }
+        ColorHsl { hue, sat, lum }
     }
 }
