@@ -24,11 +24,57 @@ impl UnitVector3Rgb {
         1.0
     }
 
-    /// Better for determining how close a color is to another, regardless of the scale. (brightness/darkness)
+    /// Better for determining how close a **color** is to another, **regardless of the scale. (brightness/darkness)**
+    ///
+    /// This will *not* indicate the similarity of intensitities between two colors.
     ///
     /// Result will be between -1 and +1 inclusively
     pub const fn dot(&self, rhs: &Self) -> f64 {
         self.r * rhs.r + self.g * rhs.g + self.b * rhs.b
+    }
+}
+
+// Integers give us more assumptions to work with
+impl From<ColorRgb> for UnitVector3Rgb {
+    fn from(value: ColorRgb) -> Self {
+        const _: () = {
+            const U8_MAX_SQR: Option<u16> = (u8::MAX as u16).checked_mul(u8::MAX as u16);
+            assert!(U8_MAX_SQR.is_some(), "u8::MAX squared should fit in u16");
+            const U8_MAX_SQR_3: Option<u32> = ((u8::MAX as u32) * (u8::MAX as u32)).checked_mul(3);
+            assert!(
+                U8_MAX_SQR_3.is_some(),
+                "3 * u8::MAX squared should fit in u32"
+            );
+            const U8_MAX_SQR_3_BITS: u32 =
+                u32::BITS - (3 * (u8::MAX as u32) * (u8::MAX as u32)).leading_zeros();
+            assert!(
+                U8_MAX_SQR_3_BITS < f64::MANTISSA_DIGITS,
+                "3 * u8::MAX squared should fit in f64 losslessly"
+            );
+        };
+        let r = value.r as u32;
+        let g = value.g as u32;
+        let b = value.b as u32;
+        let mag_sqr = r * r + g * g + b * b;
+        // x == 0 easier to calculate for integers than for f64
+        if mag_sqr == 0 {
+            return Self {
+                r: std::f64::consts::FRAC_1_SQRT_3,
+                g: std::f64::consts::FRAC_1_SQRT_3,
+                b: std::f64::consts::FRAC_1_SQRT_3,
+            };
+        }
+        debug_assert!(
+            f64::try_from(mag_sqr).is_ok(),
+            "24-bit magnitude squared should always fit in f64 losslessly"
+        );
+        let inv_mag = 1.0 / (mag_sqr as f64).sqrt();
+        // integers are also guaranteed not to be subnormal
+        Self {
+            r: value.r as f64 * inv_mag,
+            g: value.g as f64 * inv_mag,
+            b: value.b as f64 * inv_mag,
+        }
     }
 }
 
@@ -57,10 +103,29 @@ impl Vector3Rgb {
 
     /// Normalize the color like a vector (necessary for performing dot product properly)
     ///
-    /// Returns [`None`] if the vector cannot be normalized
+    /// Returns [`None`] if the vector contains subnormal values
+    ///
+    /// Note: black is treated the same as any shade of gray
+    ///
+    /// Tip: If you converted a [`ColorRgb`] to a [`Vector3Rgb`] just to call this function
+    /// and nothing else consider using [`UnitVector3Rgb::from`] instead. It will guarantee
+    /// a result since u8 can never be [subnormal](`f64::is_subnormal`).
     pub fn normalized(&self) -> Option<UnitVector3Rgb> {
         let mag_sqr = self.mag_sqr();
-        if !(mag_sqr.is_normal() && mag_sqr > 0.0) {
+        if mag_sqr == 0.0 {
+            // dont need to sqrt because 0^2 = 0
+            // special case: instead of returning None for black,
+            // it should be treated as a perfectly valid color to compare.
+            // it has no "color", meaning it's the same as white and gray.
+            return Some(UnitVector3Rgb {
+                r: std::f64::consts::FRAC_1_SQRT_3,
+                g: std::f64::consts::FRAC_1_SQRT_3,
+                b: std::f64::consts::FRAC_1_SQRT_3,
+            });
+        }
+        // we don't need to worry about negative norm because f64 isn't complex.
+        // we have also already taken care of 0, so we can safely divide by it.
+        if mag_sqr.is_subnormal() {
             return None;
         }
         let inv_mag: f64 = 1.0 / mag_sqr.sqrt();
@@ -84,7 +149,7 @@ impl From<ColorRgb> for Vector3Rgb {
     /// Convert the color components from 0..=255 to 0.0..=1.0
     fn from(value: ColorRgb) -> Self {
         const INV_BYTE_MAX: f64 = 1.0 / 255.0;
-        Vector3Rgb {
+        Self {
             r: value.r as f64 * INV_BYTE_MAX,
             g: value.g as f64 * INV_BYTE_MAX,
             b: value.b as f64 * INV_BYTE_MAX,

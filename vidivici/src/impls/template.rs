@@ -37,7 +37,7 @@ impl SHandle for SharedHandle {
     type Ref = SharedHandleRef;
 
     fn href(&mut self) -> Self::Ref {
-        SharedHandleRef(PhantomData)
+        SharedHandleRef(())
     }
 
     type UInput = UInputHandle;
@@ -55,7 +55,7 @@ impl SHandle for SharedHandle {
 ///
 /// May not implement [`Copy`]
 #[derive(Debug)]
-pub struct SharedHandleRef(PhantomData<&'a ()>);
+pub struct SharedHandleRef(());
 
 /// User input (keyboard/mouse) handle.
 ///
@@ -63,7 +63,7 @@ pub struct SharedHandleRef(PhantomData<&'a ()>);
 #[derive(Debug)]
 pub struct UInputHandle(PhantomData<*mut ()>, SharedHandleRef);
 
-impl Drop for UInputHandle<'_> {
+impl Drop for UInputHandle {
     fn drop(&mut self) {
         // If a platform has fallible cleanup: that's a shame.
     }
@@ -109,7 +109,7 @@ impl UInput for UInputHandle {
 #[derive(Debug)]
 pub struct VInputHandle(PhantomData<*mut ()>, SharedHandleRef);
 
-impl Drop for VInputHandle<'_> {
+impl Drop for VInputHandle {
     fn drop(&mut self) {
         // If a platform has fallible cleanup: that's a shame.
     }
@@ -142,7 +142,7 @@ impl VInput for VInputHandle {
 #[derive(Debug)]
 pub struct ScreenHandle(PhantomData<*mut ()>, SharedHandleRef);
 
-impl Drop for ScreenHandle<'_> {
+impl Drop for ScreenHandle {
     fn drop(&mut self) {
         // If a platform has fallible cleanup: that's a shame.
     }
@@ -163,7 +163,7 @@ impl Screen for ScreenHandle {
         unimplemented!()
     }
 
-    fn get_pixel(&mut self, _pt: IVec2) -> Result<ColorRGB, Self::GetPixelError> {
+    fn get_pixel(&mut self, _pt: IVec2) -> Result<ColorRgb, Self::GetPixelError> {
         unimplemented!()
     }
 }

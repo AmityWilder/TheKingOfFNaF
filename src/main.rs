@@ -22,7 +22,7 @@
 )]
 #![allow(dead_code)]
 #![feature(sync_nonpoison, nonpoison_condvar, nonpoison_mutex)] // Rather than poisoning, I would like the program to simply end when something goes wrong
-#![feature(iter_map_windows)]
+#![feature(iter_map_windows, more_float_constants)]
 
 use comp_vis::{color::*, *};
 use game_state::GameState;
