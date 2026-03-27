@@ -36,6 +36,7 @@ impl ColorRgb {
     }
 
     /// Square of dot product of normalized vectors
+    #[cfg(false)]
     pub const fn ndot_sqr(self, other: Self) -> f64 {
         // losslessness assertions
         const _: () = {

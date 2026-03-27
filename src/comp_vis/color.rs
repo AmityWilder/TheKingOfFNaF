@@ -37,6 +37,7 @@ impl UnitVector3Rgb {
 // Integers give us more assumptions to work with
 impl From<ColorRgb> for UnitVector3Rgb {
     fn from(value: ColorRgb) -> Self {
+        // losslessness assertions
         const _: () = {
             const U8_MAX_SQR: Option<u16> = (u8::MAX as u16).checked_mul(u8::MAX as u16);
             assert!(U8_MAX_SQR.is_some(), "u8::MAX squared should fit in u16");
